@@ -60,17 +60,50 @@ def test_a_label_read_with_nothing_for_an_analyte_is_examined_nothing_found(worl
                         "AND direction = 'low'", (a,)).fetchone() == (1,)
 
 
-def test_a_moiety_does_not_hold_is_ruled_no_effect(world):
+ROLES = ("causes", "more_dangerous", "monitoring", "interferes")
+
+
+def _rule_out(conn, roles=ROLES, **kw):
+    for role in roles:
+        _rule(conn, role=role, verdict="does_not_hold", **kw)
+
+
+def _ruled_out(conn, moiety):
+    return conn.execute(
+        "SELECT ruled_out_roles FROM drugref.lab_effect_coverage WHERE moiety_uuid = %s "
+        "AND analyte_code = 'potassium' AND direction = 'high'", (moiety,)).fetchone()[0]
+
+
+def test_a_moiety_ruled_out_in_every_role_is_ruled_no_effect(world):
     conn, _r, a = world
-    _rule(conn, subject_moiety_uuid=a, verdict="does_not_hold")
+    _rule_out(conn, subject_moiety_uuid=a)
     assert _state(conn, a) == "ruled_no_effect"
+    assert _ruled_out(conn, a) == list(ROLES)
 
 
-def test_a_class_does_not_hold_reaches_a_member_with_no_reading(world):
+def test_ruling_out_one_role_is_not_no_effect(world):
+    """Review finding 2: ruling out interference says nothing about causation."""
+    conn, _r, a = world
+    _labelled(conn, a)
+    _rule_out(conn, roles=("interferes",), subject_moiety_uuid=a)
+    assert _state(conn, a) == "examined_nothing_found"
+    assert _ruled_out(conn, a) == ["interferes"]
+
+
+def test_a_does_not_hold_with_a_co_medication_is_not_no_effect(world):
+    """Review finding 2: "not with drug B" is not "no effect"."""
+    conn, r, a = world
+    b = w.moiety(conn, r, "drugB")
+    _rule_out(conn, subject_moiety_uuid=a, co_medication_moiety_uuid=b)
+    assert _state(conn, a) == "not_examined"
+    assert _ruled_out(conn, a) == []
+
+
+def test_a_class_ruled_out_in_every_role_reaches_a_member(world):
     conn, r, a = world
     p = w.klass(conn, r, "ClassP")
     w.member(conn, r, a, p)
-    _rule(conn, subject_class_uuid=p, verdict="does_not_hold")
+    _rule_out(conn, subject_class_uuid=p)
     assert _state(conn, a) == "ruled_no_effect"
 
 
@@ -79,7 +112,7 @@ def test_a_label_reading_outranks_a_class_does_not_hold(world):
     p = w.klass(conn, r, "ClassP")
     w.member(conn, r, a, p)
     _labelled(conn, a, "hyperkalemia")
-    _rule(conn, subject_class_uuid=p, verdict="does_not_hold")
+    _rule_out(conn, subject_class_uuid=p)
     assert _state(conn, a) == "stated"
 
 

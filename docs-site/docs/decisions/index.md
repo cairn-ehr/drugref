@@ -102,5 +102,5 @@ history is never lost — it remains in the git log and in the dated design spec
   that stops reaching a pair is flagged even when another ruling still grades it.
 - [Lab effects are keyed to drugref's own analytes](lab-effects-keyed-to-analytes.md) — why a drug's effect on a
   laboratory value is stored against a MeSH-derived analyte and a direction rather than a MeSH condition or a LOINC
-  code, why the role is machine-read but never defaulted, and why a curator's ruling on one drug and analyte
-  replaces every label reading for that pair while a class ruling never hides one.
+  code, why the role is machine-read but never defaulted, and why a curator's ruling on one drug, analyte and
+  direction replaces every label reading for them while a class ruling never hides one.

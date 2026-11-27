@@ -174,3 +174,31 @@ def test_an_unresolved_subject_states_nothing(world):
     lw.section(conn, run, "set-9", "warnings", "k9")
     lw.reading(conn, run, "k9", "hyperkalemia")
     assert conn.execute("SELECT count(*) FROM drugref.lab_effect").fetchone()[0] == 0
+
+
+def test_a_member_cannot_establish_does_not_carve_it_out(world):
+    """Review finding 3: only a does_not_hold is an exception to a class holds."""
+    conn, r, _run, a = world
+    p = w.klass(conn, r, "ClassP")
+    w.member(conn, r, a, p)
+    _rule(conn, subject_class_uuid=p)
+    _rule(conn, subject_moiety_uuid=a, verdict="cannot_establish")
+    assert _rows(conn, a, "basis, reached_via_class_uuid") == [("curated", p)]
+
+
+def test_a_ruling_in_one_direction_does_not_hide_the_other(world):
+    """Review finding 4: a does_not_hold on potassium LOW is not a review of the
+    label's potassium HIGH reading."""
+    conn, _r, run, a = world
+    lw.reading(conn, run, "k1", "hyperkalemia")
+    _rule(conn, subject_moiety_uuid=a, direction="low", verdict="does_not_hold")
+    assert _rows(conn, a, "query_direction, basis") == [("high", "label")]
+
+
+def test_a_ruling_resolves_an_unspecified_reading(world):
+    """An unspecified reading is answered by a ruling in either direction: the curator
+    is the one who settles the direction."""
+    conn, _r, run, a = world
+    lw.reading(conn, run, "k1", "inr_increased", direction_read="unspecified")
+    _rule(conn, subject_moiety_uuid=a, analyte_code="inr")
+    assert _rows(conn, a, "query_direction, basis") == [("high", "curated")]

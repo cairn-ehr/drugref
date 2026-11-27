@@ -7321,7 +7321,7 @@ partitions in ~4 min and needs no database) and from `drugref_allergy` (MED-RT `
   maps; statements key to the MeSH `condition` registry plus a condition → (analyte, direction) map. A later
   LOINC crosswalk (separately noticed) stays open.
 
-## Lab effects: the model (#294 step 2, 2026-11-27) — `db/089`–`db/092`, tested on `drugref_test` only, suite 3768 → 3849
+## Lab effects: the model (#294 step 2, 2026-11-27) — `db/089`–`db/092`, tested on `drugref_test` only, suite 3768 → 3857
 
 [Design spec](superpowers/specs/2026-11-27-drugref-lab-effects-design.md) ·
 [plan](superpowers/plans/2026-11-27-drugref-lab-effects-model.md). The schema and views ReportTriage codes against;
@@ -7349,11 +7349,18 @@ partitions in ~4 min and needs no database) and from `drugref_allergy` (MED-RT `
   `LABEFFECT:<moiety>:<analyte>`, ranked by section).
 
 **Traps a later change can still break.**
-- **Role is in the ruling's key, but the REVIEW UNIT is (moiety, analyte).** Any live moiety ruling on an analyte,
-  any verdict, removes every label row for that drug and analyte from `lab_effect` and closes its question. That
-  is how a misread role is corrected. Keying the precedence on the full key would leave the wrong role showing.
+- **Role is in the ruling's key, but the REVIEW UNIT is (moiety, analyte, direction)** (spec §12, amended by the
+  final review). Any live moiety ruling on an analyte in a direction, any verdict, removes that drug's label rows
+  for it from `lab_effect` (`unspecified` on either side matches both). That is how a misread role is corrected;
+  keying on the full key would leave the wrong role showing. The worklist question is per (moiety, analyte) and
+  stays open while any direction is unanswered.
 - **A class ruling never hides a member's label rows** (fewer rows is the harm direction). Only a member's own
-  ruling on the same key carves it out of a class `holds`.
+  `does_not_hold` on the same key carves it out of a class `holds`; `cannot_establish` does not.
+- **`ruled_no_effect` needs a co-medication-free `does_not_hold` for ALL FOUR roles**; `ruled_out_roles` shows a
+  partial ruling, which falls through. The final review found one role or one combination reading as "no effect".
+- **Every table with a `question_uuid` FK must be in `register_from_gaps`' DELETE guard**, or the first ruling
+  citing its question aborts every later ingest. `curated_lab_effect` was missed and caught by the final review;
+  `tests/test_question_delete_guard.py` now derives the list from the catalog.
 - **Filter `lab_effect` on `query_direction`, not `direction`:** an `unspecified` row is listed under both.
 - **`current_release` is LEFT-joined:** it has zero rows with no published release, and an inner join empties the
   view (pinned).
@@ -7779,7 +7786,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3849 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3857 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

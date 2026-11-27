@@ -297,3 +297,20 @@ read) so a consumer can tell one label from fifty.
 Migration split and numbering; module names; the exact phrase and role rules (step 3); column types beyond what
 is stated; index choices; how the evidence view joins quotes; the CLI surface (a `drugref lab-effects` read
 command is likely useful but not required by ReportTriage, which reads the views).
+
+## 12. Amendments from the final review (2026-11-27, before merge)
+
+The whole-branch review ran the views against scenarios and found three places where §6.5–§8 as written would
+give a consumer less, or false reassurance. All three narrow what a ruling hides or claims; none hides more.
+
+1. **The review unit is (moiety, analyte, direction)**, not (moiety, analyte). A ruling on potassium *low* no longer
+   retires a label's potassium *high* reading or closes its question. `unspecified` on either side still matches
+   both directions, so a ruling settles an unread direction. The worklist key stays `LABEFFECT:<moiety>:<analyte>`:
+   one question per pair, open while any direction is unanswered.
+2. **`ruled_no_effect` needs a co-medication-free `does_not_hold` for all four roles.** Ruling out interference, or
+   ruling "not with drug B", is not "no effect". The coverage view gains `ruled_out_roles`, listing what has been
+   ruled out so far; a partial ruling falls through to the next state.
+3. **Only a member's `does_not_hold` carves it out of a class `holds`.** A member's `cannot_establish` does not.
+
+Still open for the owner: whether a ruling should hide readings only when it cites the pair's worklist question
+(so an unasked special ruling never retires a reading).

@@ -166,6 +166,11 @@ def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str
             "                WHERE x.question_uuid = q.question_uuid) "
             # db/058, class-profile rulings: same cascade-into-append-only hazard.
             "AND NOT EXISTS (SELECT 1 FROM drugref.curated_property_ruling x "
+            "                WHERE x.question_uuid = q.question_uuid) "
+            # db/090, lab-effect rulings (#294): the same hazard, and missed once --
+            # tests/test_question_delete_guard.py now derives this list's
+            # completeness from the catalog.
+            "AND NOT EXISTS (SELECT 1 FROM drugref.curated_lab_effect x "
             "                WHERE x.question_uuid = q.question_uuid)",
             (gap_kind, live_keys))
         conn.execute(

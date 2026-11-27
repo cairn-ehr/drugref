@@ -36,14 +36,15 @@ precautions, so a consumer's filter does not hide the fourth role.
 it would turn "makes it more dangerous" (low potassium on digoxin) into "causes", which a consumer treats
 differently.
 
-**5. A curator reviews a drug and an analyte together.** Any ruling on, say, digoxin and potassium replaces every
-label reading for that pair, so a misread role is corrected by ruling the right one. A ruling on a class reaches
-every member; a member's own ruling carves it out. **A class ruling never hides a member's label readings**: one
+**5. A curator reviews a drug, an analyte and a direction together.** Any ruling on, say, digoxin and low
+potassium replaces every label reading for low potassium, so a misread role is corrected by ruling the right one;
+it leaves the readings for high potassium alone. A ruling on a class reaches every member; a member's own "does
+not hold" carves it out. **A class ruling never hides a member's label readings**: one
 "does not hold" on a class must not silence every member's labels, because fewer rows is the direction that harms.
 
 **6. "No statement" is never "no effect".** The coverage view gives every drug, analyte and direction one state.
-Only a curator's "does not hold" reads as no effect; "a label was read and said nothing" and "no label was read"
-are both unavailable context, never reassurance.
+Only a curator's "does not hold" for all four roles, with no co-medication, reads as no effect; "a label was read
+and said nothing" and "no label was read" are both unavailable context, never reassurance.
 
 ## Consequences
 
