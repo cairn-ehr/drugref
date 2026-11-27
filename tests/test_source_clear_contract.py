@@ -239,6 +239,10 @@ def test_every_spl_foreign_key_points_LATER_in_the_clear_order(conn):
         parent_table = parent.split(".")[-1]
         if parent_table == "spl_advice_level":
             continue  # db/066's static vocabulary table: never cleared, so never ordered
+        if child_table.startswith("spl_lab_"):
+            # db/091's SPL_LAB tables are ANOTHER SOURCE with no clear yet: #294 step 3
+            # registers their own clear order (and its own version of this check).
+            continue
         assert position[child_table] < position[parent_table], (child, parent)
 
 

@@ -113,9 +113,12 @@ def test_manifest_differences():
 
 
 def test_every_orchestrator_writer_has_an_adapter():
-    """`curation` and `unattributed` name no orchestrator: a run with either is refused."""
+    """`curation` and `unattributed` name no orchestrator: a run with either is refused.
+
+    `spl_lab_run` (db/091) has no orchestrator YET: #294 step 3 writes it and must add
+    its adapter here. Until then no SPL_LAB run exists to replay."""
     assert set(release_replay.ADAPTERS) == (
-        set(provenance.WRITERS) - {"curation", "unattributed"})
+        set(provenance.WRITERS) - {"curation", "unattributed", "spl_lab_run"})
 
 
 # ---- end to end ------------------------------------------------------------

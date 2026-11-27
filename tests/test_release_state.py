@@ -126,5 +126,6 @@ def test_current_release_or_absent_distinguishes_all_three(conn):
     assert release_state.current_release_or_absent(conn) is None
     _publish(conn)
     assert release_state.current_release_or_absent(conn).release_tag == TAG
-    conn.execute("DROP VIEW drugref.current_release")
+    # CASCADE: db/092's lab_effect reads the view; a pre-db/081 database has neither.
+    conn.execute("DROP VIEW drugref.current_release CASCADE")
     assert release_state.current_release_or_absent(conn) is release_state.VIEW_ABSENT
