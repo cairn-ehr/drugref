@@ -290,6 +290,103 @@
       "signature": "dab9329bd3720db7c2f0d67f855e111eb644adfb7ce427de0e56dc14e86bd0fb9feb7bf66f7c531ebba3f7adb8953a1095cc0082a823adc591bbd67cad735d0f"
     },
     {
+      "name": "a MOIETY lab-effect ruling with a co-medication and an onset",
+      "context": "curated_lab_effect/v1",
+      "fields": [
+        [
+          "subject_class_uuid",
+          null
+        ],
+        [
+          "subject_moiety_uuid",
+          "3b9e5c71-2d84-5a06-9f13-6c7a1e8d4b25"
+        ],
+        [
+          "analyte_code",
+          "inr"
+        ],
+        [
+          "direction",
+          "high"
+        ],
+        [
+          "role",
+          "causes"
+        ],
+        [
+          "co_medication_moiety_uuid",
+          "e2c47a90-5b18-5d3f-8a61-9d0b3f6e7c14"
+        ],
+        [
+          "co_medication_class_uuid",
+          null
+        ],
+        [
+          "subject_kind",
+          "moiety"
+        ],
+        [
+          "subject_uuid",
+          "3b9e5c71-2d84-5a06-9f13-6c7a1e8d4b25"
+        ],
+        [
+          "co_medication_kind",
+          "moiety"
+        ],
+        [
+          "co_medication_uuid",
+          "e2c47a90-5b18-5d3f-8a61-9d0b3f6e7c14"
+        ],
+        [
+          "verdict",
+          "holds"
+        ],
+        [
+          "onset_min_days",
+          "3"
+        ],
+        [
+          "onset_max_days",
+          "14"
+        ],
+        [
+          "method",
+          null
+        ],
+        [
+          "question_uuid",
+          null
+        ],
+        [
+          "source",
+          "DRUGREF"
+        ],
+        [
+          "reviewed_by",
+          "a lab-effect curator"
+        ],
+        [
+          "reviewed_against",
+          "amiodarone label, drug interactions, 2026-08"
+        ],
+        [
+          "reviewed_at",
+          "2026-11-27T09:30:00.000000Z"
+        ],
+        [
+          "signer_key_fingerprint",
+          "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c"
+        ],
+        [
+          "signed_at",
+          "2026-11-27T09:31:12.500000Z"
+        ]
+      ],
+      "payload": "drugref-sig-v1\ncurated_lab_effect/v1\n22\n18:subject_class_uuid:N:0:\n19:subject_moiety_uuid:S:36:3b9e5c71-2d84-5a06-9f13-6c7a1e8d4b25\n12:analyte_code:S:3:inr\n9:direction:S:4:high\n4:role:S:6:causes\n25:co_medication_moiety_uuid:S:36:e2c47a90-5b18-5d3f-8a61-9d0b3f6e7c14\n24:co_medication_class_uuid:N:0:\n12:subject_kind:S:6:moiety\n12:subject_uuid:S:36:3b9e5c71-2d84-5a06-9f13-6c7a1e8d4b25\n18:co_medication_kind:S:6:moiety\n18:co_medication_uuid:S:36:e2c47a90-5b18-5d3f-8a61-9d0b3f6e7c14\n7:verdict:S:5:holds\n14:onset_min_days:S:1:3\n14:onset_max_days:S:2:14\n6:method:N:0:\n13:question_uuid:N:0:\n6:source:S:7:DRUGREF\n11:reviewed_by:S:20:a lab-effect curator\n16:reviewed_against:S:44:amiodarone label, drug interactions, 2026-08\n11:reviewed_at:S:27:2026-11-27T09:30:00.000000Z\n22:signer_key_fingerprint:S:64:56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c\n9:signed_at:S:27:2026-11-27T09:31:12.500000Z\n",
+      "digest": "9bfa3cb119265c4fdb893d259ee1c454a5c920aa331ecff84cfa3bd16d94ef82",
+      "signature": "ede592767a0071ee412fb944304623d64ebe5853babfdd5b6d4a089c4feaab00b196c245a5ed4df2d437a6055117003970592c6337a8f37e6daa470afdeec30b"
+    },
+    {
       "name": "an acknowledgement of one departed CLASS-ruling pair",
       "context": "graded_pair_departure_ack/v1",
       "fields": [

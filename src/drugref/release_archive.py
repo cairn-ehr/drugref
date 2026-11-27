@@ -35,6 +35,9 @@ _EXPORT_TABLES = {
     "curated_condition": "curated_condition_id",
     "curated_class_interaction": "curated_class_interaction_id",
     "curated_property_ruling": "curated_property_ruling_id",
+    "curated_lab_effect": "curated_lab_effect_id",
+    # Who a class lab-effect ruling reached when it was made (db/090, #258).
+    "curated_lab_effect_reach": "curated_lab_effect_id",
     "class_expansion_policy": "policy_id",
     # Audit data no upstream file can rebuild: who a class ruling reached (db/080).
     "curated_class_interaction_reach":

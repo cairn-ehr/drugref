@@ -64,6 +64,7 @@ def test_publish_writes_record_export_and_build_row(conn, key, tmp_path, a_grade
     assert set(export) == {*releases._CURATED_KINDS, "class_expansion_policy",
                            "curated_class_interaction_reach",
                            "curated_class_interaction_snapshot",
+                           "curated_lab_effect_reach",
                            "reviewer_account", "reviewer_profile",
                            "reviewer_key_enrolment", "reviewer_annotation",
                            "reviewer_evidence_reference", "signing_key",

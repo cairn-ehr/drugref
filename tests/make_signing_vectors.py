@@ -156,6 +156,35 @@ def _cases(fp: str) -> list[dict]:
         ["signer_key_fingerprint", fp],
         ["signed_at", "2026-11-07T05:13:02.125000Z"],
     ]
+    lab_effect_fields = [
+        # THE LAB-EFFECT case (db/090, #294). A MOIETY subject with a co-medication
+        # MOIETY (amiodarone raises the INR with warfarin present), so of the four
+        # subject/co-medication FK columns two are set; the generated co_medication_kind
+        # and co_medication_uuid are signed like any field. The onset integers render
+        # as strings ("3", "14"), as every signed value does; method is NULL.
+        ["subject_class_uuid", None],
+        ["subject_moiety_uuid", "3b9e5c71-2d84-5a06-9f13-6c7a1e8d4b25"],
+        ["analyte_code", "inr"],
+        ["direction", "high"],
+        ["role", "causes"],
+        ["co_medication_moiety_uuid", "e2c47a90-5b18-5d3f-8a61-9d0b3f6e7c14"],
+        ["co_medication_class_uuid", None],
+        ["subject_kind", "moiety"],
+        ["subject_uuid", "3b9e5c71-2d84-5a06-9f13-6c7a1e8d4b25"],
+        ["co_medication_kind", "moiety"],
+        ["co_medication_uuid", "e2c47a90-5b18-5d3f-8a61-9d0b3f6e7c14"],
+        ["verdict", "holds"],
+        ["onset_min_days", "3"],
+        ["onset_max_days", "14"],
+        ["method", None],
+        ["question_uuid", None],
+        ["source", "DRUGREF"],
+        ["reviewed_by", "a lab-effect curator"],
+        ["reviewed_against", "amiodarone label, drug interactions, 2026-08"],
+        ["reviewed_at", "2026-11-27T09:30:00.000000Z"],
+        ["signer_key_fingerprint", fp],
+        ["signed_at", "2026-11-27T09:31:12.500000Z"],
+    ]
     departure_ack_fields = [
         # THE DEPARTURE-ACK case (db/088, #284). The only context signed over a VIEW:
         # the episode is named by its ruling key and drug pair (graded_pair_observation's
@@ -230,6 +259,11 @@ def _cases(fp: str) -> list[dict]:
             "name": "a CLASS-subject property ruling with generated key columns",
             "context": "curated_property_ruling/v1",
             "fields": property_ruling_fields,
+        },
+        {
+            "name": "a MOIETY lab-effect ruling with a co-medication and an onset",
+            "context": "curated_lab_effect/v1",
+            "fields": lab_effect_fields,
         },
         {
             "name": "an acknowledgement of one departed CLASS-ruling pair",

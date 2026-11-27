@@ -2,8 +2,9 @@
 
 Split out of `release_replay` to keep that file under the ~500-line cap. The
 loader is the part the curated export grows with, so it lives alone with the
-table constants (`_TIMED`, `_RULINGS`, `_REACH`, `_SNAPSHOT`, `_OBSERVATIONS`) it
-is driven by; `release_replay` imports `_TIMED` and `_Loader` from here.
+table constants (`_TIMED`, `_RULINGS`, `_REACH`, `_SNAPSHOT`, `_LAB_REACH`,
+`_OBSERVATIONS`) it is driven by; `release_replay` imports `_TIMED` and `_Loader`
+from here.
 """
 from psycopg import sql
 from psycopg.types.json import Jsonb
@@ -24,6 +25,7 @@ _TIMED = {"reviewer_account": ("reviewer_uuid", "created_at"),
           "curated_condition": ("curated_condition_id", "reviewed_at"),
           "curated_class_interaction": ("curated_class_interaction_id", "reviewed_at"),
           "curated_property_ruling": ("curated_property_ruling_id", "reviewed_at"),
+          "curated_lab_effect": ("curated_lab_effect_id", "reviewed_at"),
           "class_expansion_policy": ("policy_id", "reviewed_at"),
           # No FK to its target or its key (db/030), so it may follow any of them.
           # A RELEASE's signature is not loaded (`_signs_a_release`).
@@ -37,6 +39,9 @@ _TIMED = {"reviewer_account": ("reviewer_uuid", "created_at"),
 _RULINGS = "curated_class_interaction"
 _REACH = "curated_class_interaction_reach"
 _SNAPSHOT = "curated_class_interaction_snapshot"
+# A class lab-effect ruling's reach (db/090): one row per ruling, loaded with it.
+_LAB_RULINGS = "curated_lab_effect"
+_LAB_REACH = "curated_lab_effect_reach"
 # Compared, never loaded: db/083's triggers regenerate observations in the target
 # as rulings load and runs finish (`compare_observations`).
 _OBSERVATIONS = "graded_pair_observation"
@@ -44,7 +49,7 @@ _ACKS = "graded_pair_departure_ack"
 # An observation's (ruling key, pair): what both sides of the comparison match on.
 _KEY_PAIR = ("rule_grain", "subject_key", "object_class_uuid", "relationship",
              "subject_moiety", "partner_moiety")
-assert (set(_TIMED) | {_REACH, _SNAPSHOT, _OBSERVATIONS}
+assert (set(_TIMED) | {_REACH, _SNAPSHOT, _LAB_REACH, _OBSERVATIONS}
         == set(release_archive._EXPORT_TABLES))
 
 
@@ -87,6 +92,7 @@ class _Loader:
             self.reach.setdefault(row["curated_class_interaction_id"], []).append(row)
         self.snapshot = {r["curated_class_interaction_id"]: r
                          for r in export[_SNAPSHOT]}
+        self.lab_reach = {r["curated_lab_effect_id"]: r for r in export[_LAB_REACH]}
         self.observations = {r["observation_id"]: r for r in export[_OBSERVATIONS]}
         # The origin's acked episodes, so `compare_observations` can tell which of
         # its (key, pair)s were left open.
@@ -150,6 +156,8 @@ class _Loader:
         self.report.curated_rows += 1
         if table == _RULINGS:
             self._ruling_reach(rid)
+        if table == _LAB_RULINGS:
+            self._lab_ruling_reach(rid)
 
     def _commit_point(self) -> None:
         """Run the db/083 refreshes queued so far, as COMMIT would, without
@@ -250,6 +258,23 @@ class _Loader:
             self._insert(_REACH, r)
         if marker is not None:
             self._insert(_SNAPSHOT, marker)
+
+    def _lab_ruling_reach(self, rid) -> None:
+        """Load a class lab-effect ruling's reach row; compare it with now."""
+        marker = self.lab_reach.get(rid)
+        if marker is None:          # a moiety ruling: nothing was snapshotted
+            return
+        self.report.rulings_checked += 1
+        want = set(marker["members"])
+        got = {str(m) for (m,) in self.conn.execute(
+            "SELECT m.moiety_uuid FROM drugref.lab_effect_class_member m "
+            "JOIN drugref.curated_lab_effect r ON r.subject_class_uuid = m.class_uuid "
+            "WHERE r.curated_lab_effect_id = %s", (rid,))}
+        if want != got:
+            self.report.differences.append(
+                f"lab-effect class ruling {rid}: reach differs from ruling time: "
+                f"{len(got - want)} added, {len(want - got)} missing")
+        self._insert(_LAB_REACH, marker)
 
     def unmatched(self) -> None:
         """After the last row: report what the export names but never supplied

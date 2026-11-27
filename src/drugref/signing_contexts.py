@@ -99,6 +99,17 @@ CURATED_PROPERTY_RULING_V1 = (
     "source", "reviewed_by", "reviewed_against", "reviewed_at",
     *ATTESTATION_FIELDS)
 
+# db/090 (#294), lab-effect rulings. EVERY column except the surrogate pk and
+# superseded_by, in table order, INCLUDING the four STORED generated columns: they are
+# the natural key, which `releases.enumerate_live` reads out of the signed fields.
+CURATED_LAB_EFFECT_V1 = (
+    "subject_class_uuid", "subject_moiety_uuid", "analyte_code", "direction", "role",
+    "co_medication_moiety_uuid", "co_medication_class_uuid", "subject_kind",
+    "subject_uuid", "co_medication_kind", "co_medication_uuid", "verdict",
+    "onset_min_days", "onset_max_days", "method", "question_uuid", "source",
+    "reviewed_by", "reviewed_against", "reviewed_at",
+    *ATTESTATION_FIELDS)
+
 # db/088 (#284), departure acknowledgements. The columns of the
 # `graded_pair_departure_ack_payload` VIEW, not of the ack table: the table names its
 # episode by `observation_id`, a database-local id a release replay renumbers, so the
@@ -117,6 +128,7 @@ FIELD_LISTS = {
     "curated_condition/v1": CURATED_CONDITION_V1,
     "curated_class_interaction/v1": CURATED_CLASS_INTERACTION_V1,
     "curated_property_ruling/v1": CURATED_PROPERTY_RULING_V1,
+    "curated_lab_effect/v1": CURATED_LAB_EFFECT_V1,
     "graded_pair_departure_ack/v1": GRADED_PAIR_DEPARTURE_ACK_V1,
     "release_manifest/v1": RELEASE_MANIFEST_V1,
 }
@@ -168,11 +180,19 @@ CURATED_CLASS_INTERACTION_V1_KEY = (
 CURATED_PROPERTY_RULING_V1_KEY = (
     "subject_kind", "subject_uuid", "relationship", "object_kind", "object_uuid")
 
+# db/090. Seven columns, matching the single-live trigger: role and direction are in
+# the key (one drug, several facts about one analyte), and the co-medication is
+# coalesced into a kind and a uuid so no key column is ever NULL.
+CURATED_LAB_EFFECT_V1_KEY = (
+    "subject_kind", "subject_uuid", "analyte_code", "direction", "role",
+    "co_medication_kind", "co_medication_uuid")
+
 NATURAL_KEY_COLUMNS = {
     "curated_interaction/v1": CURATED_INTERACTION_V1_KEY,
     "curated_condition/v1": CURATED_CONDITION_V1_KEY,
     "curated_class_interaction/v1": CURATED_CLASS_INTERACTION_V1_KEY,
     "curated_property_ruling/v1": CURATED_PROPERTY_RULING_V1_KEY,
+    "curated_lab_effect/v1": CURATED_LAB_EFFECT_V1_KEY,
 }
 
 
