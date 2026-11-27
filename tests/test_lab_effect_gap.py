@@ -1,8 +1,9 @@
 """db/092 part 3: the lab-effect worklist, gap kind 21 (#294).
 
-DB-gated. One question per (moiety, analyte) whose label readings no live moiety
-ruling answers -- the review unit (design spec 6.5) -- with a frozen key and text that
-says "machine-read, not confirmed" and never that a drug is safe.
+DB-gated. One question per (moiety, analyte) while any of its label readings is still
+listed in lab_effect, i.e. no live moiety ruling answers it (design spec 6.5 as
+amended by sections 12 and 13), with a frozen key and text that says "machine-read,
+not confirmed" and never that a drug is safe.
 """
 import pytest
 
@@ -56,12 +57,42 @@ def test_a_not_an_effect_reading_raises_nothing(world):
     assert _gap(conn) == []
 
 
-@pytest.mark.parametrize("verdict", ["holds", "does_not_hold", "cannot_establish"])
-def test_any_moiety_ruling_on_the_analyte_and_direction_closes_it(world, verdict):
-    """Any role, any verdict: the curator reviewed the (drug, analyte, direction)."""
+@pytest.mark.parametrize("verdict, role, closes", [
+    ("holds", "more_dangerous", True),          # a holds corrects the role
+    ("does_not_hold", "causes", True),
+    ("cannot_establish", "causes", True),
+    ("does_not_hold", "interferes", False),     # spec 13.1: another role, no review
+    ("cannot_establish", "monitoring", False)])
+def test_a_moiety_ruling_closes_it_per_the_review_unit(world, verdict, role, closes):
     conn, _r, run, a = world
     lw.reading(conn, run, "k1", "hyperkalemia")
-    _rule(conn, a, verdict=verdict, role="more_dangerous", direction="high")
+    _rule(conn, a, verdict=verdict, role=role, direction="high")
+    assert (_gap(conn) == []) is closes
+
+
+def test_a_co_medication_ruling_leaves_the_standalone_question_open(world):
+    """Spec 13.2."""
+    conn, r, run, a = world
+    lw.reading(conn, run, "k1", "hyperkalemia")
+    _rule(conn, a, verdict="does_not_hold",
+          co_medication_moiety_uuid=w.moiety(conn, r, "drugE"))
+    assert [g[:2] for g in _gap(conn)] == [(a, "potassium")]
+
+
+def test_an_unspecified_reading_stays_open_until_both_directions_are_ruled(world):
+    """Spec 13.3: a ruling on INR high leaves the unread reading's low half open."""
+    conn, _r, run, a = world
+    lw.reading(conn, run, "k1", "inr_increased", direction_read="unspecified")
+    _rule(conn, a, analyte_code="inr", direction="high")
+    assert [g[:2] for g in _gap(conn)] == [(a, "inr")]
+    _rule(conn, a, analyte_code="inr", direction="low", verdict="does_not_hold")
+    assert _gap(conn) == []
+
+
+def test_an_unspecified_ruling_closes_an_unspecified_reading(world):
+    conn, _r, run, a = world
+    lw.reading(conn, run, "k1", "inr_increased", direction_read="unspecified")
+    _rule(conn, a, analyte_code="inr", direction="unspecified")
     assert _gap(conn) == []
 
 
@@ -87,6 +118,14 @@ def test_a_ruling_may_cite_its_own_question_only(world):
     _rule(conn, a, question_uuid=quuid)          # its own (moiety, analyte): accepted
     with pytest.raises(ValueError):
         _rule(conn, a, analyte_code="sodium", direction="low", question_uuid=quuid)
+    with pytest.raises(ValueError):              # another drug's question
+        _rule(conn, w.moiety(conn, r, "drugB"), question_uuid=quuid)
+    with pytest.raises(ValueError, match="asks about one drug"):   # a class: none
+        curation_lab_effect.record_lab_effect_ruling(
+            conn, subject_class_uuid=w.klass(conn, r, "ClassP"),
+            analyte_code="potassium", direction="high", role="causes",
+            verdict="holds", reviewed_by="Dr X", reviewed_against="label",
+            question_uuid=quuid)
 
 
 def test_a_ruling_citing_its_question_survives_the_next_ingest(world):
@@ -103,7 +142,7 @@ def test_a_ruling_citing_its_question_survives_the_next_ingest(world):
 
 
 def test_a_ruling_in_one_direction_leaves_the_other_direction_open(world):
-    """Review finding 4: a ruling on potassium LOW does not review a HIGH reading."""
+    """Spec 12.1: a ruling on potassium LOW does not review a HIGH reading."""
     conn, _r, run, a = world
     lw.reading(conn, run, "k1", "hyperkalemia")
     _rule(conn, a, direction="low", verdict="does_not_hold")

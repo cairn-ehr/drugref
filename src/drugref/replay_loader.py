@@ -2,9 +2,9 @@
 
 Split out of `release_replay` to keep that file under the ~500-line cap. The
 loader is the part the curated export grows with, so it lives alone with the
-table constants (`_TIMED`, `_RULINGS`, `_REACH`, `_SNAPSHOT`, `_LAB_REACH`,
-`_OBSERVATIONS`) it is driven by; `release_replay` imports `_TIMED` and `_Loader`
-from here.
+table constants (`_TIMED`, `_RULINGS`, `_REACH`, `_SNAPSHOT`, `_LAB_RULINGS`,
+`_LAB_REACH`, `_OBSERVATIONS`) it is driven by; `release_replay` imports `_TIMED`
+and `_Loader` from here.
 """
 from psycopg import sql
 from psycopg.types.json import Jsonb
@@ -39,7 +39,8 @@ _TIMED = {"reviewer_account": ("reviewer_uuid", "created_at"),
 _RULINGS = "curated_class_interaction"
 _REACH = "curated_class_interaction_reach"
 _SNAPSHOT = "curated_class_interaction_snapshot"
-# A class lab-effect ruling's reach (db/090): one row per ruling, loaded with it.
+# A class lab-effect ruling's reach (db/090): one row per CLASS ruling (a moiety
+# ruling has none), loaded with it.
 _LAB_RULINGS = "curated_lab_effect"
 _LAB_REACH = "curated_lab_effect_reach"
 # Compared, never loaded: db/083's triggers regenerate observations in the target
@@ -157,7 +158,7 @@ class _Loader:
         if table == _RULINGS:
             self._ruling_reach(rid)
         if table == _LAB_RULINGS:
-            self._lab_ruling_reach(rid)
+            self._lab_ruling_reach(rid, row)
 
     def _commit_point(self) -> None:
         """Run the db/083 refreshes queued so far, as COMMIT would, without
@@ -259,10 +260,16 @@ class _Loader:
         if marker is not None:
             self._insert(_SNAPSHOT, marker)
 
-    def _lab_ruling_reach(self, rid) -> None:
+    def _lab_ruling_reach(self, rid, row) -> None:
         """Load a class lab-effect ruling's reach row; compare it with now."""
         marker = self.lab_reach.get(rid)
-        if marker is None:          # a moiety ruling: nothing was snapshotted
+        if marker is None:
+            # Every class ruling is snapshotted when made (curation_lab_effect), so
+            # only a moiety ruling may lack one; a class ruling without it is a
+            # broken export whose #258 audit row is gone.
+            if row["subject_class_uuid"] is not None:
+                self.report.differences.append(
+                    f"lab-effect class ruling {rid}: the export lacks its reach row")
             return
         self.report.rulings_checked += 1
         want = set(marker["members"])
@@ -288,6 +295,11 @@ class _Loader:
             for rid in sorted(self.seeded[t] - self.compared[t]):
                 self.report.differences.append(
                     f"{t} {rid}: a migration seeded it, but the export lacks it")
+        # A reach row loads only with its ruling, so one whose ruling is missing
+        # would otherwise vanish without a word.
+        for rid in sorted(self.lab_reach.keys() - self.loaded[_LAB_RULINGS]):
+            self.report.differences.append(
+                f"{_LAB_REACH} {rid}: its ruling is not in the export")
 
     def reset_sequences(self) -> None:
         """Move each identity past the loaded ids, so a later write cannot collide.

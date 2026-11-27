@@ -82,7 +82,7 @@ def test_a_moiety_ruled_out_in_every_role_is_ruled_no_effect(world):
 
 
 def test_ruling_out_one_role_is_not_no_effect(world):
-    """Review finding 2: ruling out interference says nothing about causation."""
+    """Spec 12.2: ruling out interference says nothing about causation."""
     conn, _r, a = world
     _labelled(conn, a)
     _rule_out(conn, roles=("interferes",), subject_moiety_uuid=a)
@@ -91,7 +91,7 @@ def test_ruling_out_one_role_is_not_no_effect(world):
 
 
 def test_a_does_not_hold_with_a_co_medication_is_not_no_effect(world):
-    """Review finding 2: "not with drug B" is not "no effect"."""
+    """Spec 12.2: "not with drug B" is not "no effect"."""
     conn, r, a = world
     b = w.moiety(conn, r, "drugB")
     _rule_out(conn, subject_moiety_uuid=a, co_medication_moiety_uuid=b)
@@ -121,6 +121,48 @@ def test_cannot_establish_is_its_own_state(world):
     _labelled(conn, a)
     _rule(conn, subject_moiety_uuid=a, verdict="cannot_establish")
     assert _state(conn, a) == "cannot_establish"
+
+
+def test_a_member_own_cannot_establish_outranks_a_class_rule_out(world):
+    """A drug-specific "the sources do not settle it" must not be overruled by a
+    class-level "no": that would be reassurance the curator withheld."""
+    conn, r, a = world
+    p = w.klass(conn, r, "ClassP")
+    w.member(conn, r, a, p)
+    _rule_out(conn, subject_class_uuid=p)
+    _rule(conn, subject_moiety_uuid=a, verdict="cannot_establish")
+    assert _state(conn, a) == "cannot_establish"
+
+
+def test_a_corrected_rule_out_no_longer_counts(world):
+    conn, _r, a = world
+    _rule_out(conn, subject_moiety_uuid=a)
+    _rule(conn, subject_moiety_uuid=a, verdict="cannot_establish")   # corrects causes
+    assert _state(conn, a) == "cannot_establish"
+    assert _ruled_out(conn, a) == ["more_dangerous", "monitoring", "interferes"]
+
+
+def test_a_rule_out_in_one_direction_is_not_no_effect_in_the_other(world):
+    conn, _r, a = world
+    _rule_out(conn, subject_moiety_uuid=a, direction="low")
+    assert (_state(conn, a, direction="low"), _state(conn, a)) == (
+        "ruled_no_effect", "not_examined")
+
+
+def test_an_unspecified_rule_out_is_no_effect_in_both_directions(world):
+    conn, _r, a = world
+    _rule_out(conn, subject_moiety_uuid=a, direction="unspecified")
+    assert (_state(conn, a), _state(conn, a, direction="low")) == (
+        "ruled_no_effect", "ruled_no_effect")
+
+
+def test_ruling_out_another_role_leaves_the_label_statement_stated(world):
+    """Spec 13.1: "does not interfere" leaves the label's "causes" reading standing,
+    so coverage must not fall through to "label read, nothing found"."""
+    conn, _r, a = world
+    _labelled(conn, a, "hyperkalemia")
+    _rule_out(conn, roles=("interferes",), subject_moiety_uuid=a)
+    assert _state(conn, a) == "stated"
 
 
 def test_the_other_direction_is_not_stated_by_a_ruling(world):

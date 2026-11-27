@@ -36,20 +36,26 @@ precautions, so a consumer's filter does not hide the fourth role.
 it would turn "makes it more dangerous" (low potassium on digoxin) into "causes", which a consumer treats
 differently.
 
-**5. A curator reviews a drug, an analyte and a direction together.** Any ruling on, say, digoxin and low
-potassium replaces every label reading for low potassium, so a misread role is corrected by ruling the right one;
-it leaves the readings for high potassium alone. A ruling on a class reaches every member; a member's own "does
-not hold" carves it out. **A class ruling never hides a member's label readings**: one
-"does not hold" on a class must not silence every member's labels, because fewer rows is the direction that harms.
+**5. A ruling replaces only the label readings it actually reviewed** (owner rulings, 2026-11-28). A curator's
+"holds" on, say, digoxin and low potassium replaces the label readings for low potassium in any role, so a
+misread role is corrected by ruling the right one. A "does not hold" or "cannot be established" replaces only
+the readings in its own role: "does not interfere with the assay" leaves "causes hypokalaemia" standing. A
+ruling also has to match the reading's co-medication ("not more dangerous with drug E" leaves the drug's own
+statement alone) and its direction: a ruling on low potassium leaves the readings for high potassium alone, and
+a reading whose direction was not read stays listed in whichever direction no ruling has answered yet. A ruling
+on a class reaches every member; a member's own "does not hold" carves it out. **A class ruling never hides a
+member's label readings**: one "does not hold" on a class must not silence every member's labels, because fewer
+rows is the direction that harms.
 
 **6. "No statement" is never "no effect".** The coverage view gives every drug, analyte and direction one state.
-Only a curator's "does not hold" for all four roles, with no co-medication, reads as no effect; "a label was read
-and said nothing" and "no label was read" are both unavailable context, never reassurance.
+Only a curator's "does not hold" for all four roles, with no co-medication, reads as no effect, and a drug's own
+"cannot be established" outranks a class-level "does not hold"; "a label was read and said nothing" and "no label
+was read" are both unavailable context, never reassurance.
 
 ## Consequences
 
 - The read view is usable before any curator works, at the cost of over-inclusion: the source evaluation found
-  245 drugs mentioning low platelets in a boxed warning or warnings section. Curated salience is the later
+  245 substances mentioning low platelets in a boxed warning or warnings section. Curated salience is the later
   refinement.
 - Every class ruling records the drugs it reached when made, so a decision audit can say who it covered then.
 - A LOINC crosswalk, if ever wanted, ships beside drugref under LOINC's own licence, never inside its tables.

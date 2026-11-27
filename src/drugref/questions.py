@@ -340,8 +340,8 @@ def require_question_for(
     """
     if question_uuid is not None and not candidates:
         raise ValueError(f"question {question_uuid}: this row answers no worklist "
-                         "question (gap 19 asks about one member, never a class); "
-                         "cite none")
+                         "question (the worklist asks about one drug, never a "
+                         "class); cite none")
     if cites_own_question(conn, question_uuid, candidates):
         return
     kinds = " or ".join(dict.fromkeys(k for k, _ in candidates))

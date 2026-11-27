@@ -12,8 +12,10 @@ _G = "drugref.gap_unconfirmed_label_lab_effect"
 LAB_EFFECT_GAP_SOURCES = {
     "unconfirmed_label_lab_effect": {
         "view": "gap_unconfirmed_label_lab_effect",
-        # One question per (drug, analyte): the review unit a ruling answers (design
-        # spec 6.5), however many roles or directions the labels were read in.
+        # One question per (drug, analyte), however many roles, directions or
+        # co-medications the labels were read in. A ruling answers readings finer
+        # than that (db/092 rule 1), so the question stays open while any reading
+        # of the pair is unanswered.
         "key_sql": "'LABEFFECT:' || moiety_uuid || ':' || analyte_code",
         # Strongest label section first (1 = boxed warning).
         "rank_sql": "section_rank",

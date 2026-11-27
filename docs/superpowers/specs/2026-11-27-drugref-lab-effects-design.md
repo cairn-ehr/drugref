@@ -314,3 +314,27 @@ give a consumer less, or false reassurance. All three narrow what a ruling hides
 
 Still open for the owner: whether a ruling should hide readings only when it cites the pair's worklist question
 (so an unasked special ruling never retires a reading).
+
+## 13. Amendments from the finalcheck review (owner rulings, 2026-11-28, before merge)
+
+The pre-merge review ran §12's rules against scenarios and found three more ways a ruling hid label readings it
+had not reviewed. The owner ruled on each; all three narrow what a ruling hides, and none hides more. They
+replace §6.5's "any live moiety ruling answers every machine reading" and §12.1's "`unspecified` on either side
+still matches both directions". A moiety ruling answers a reading of the same drug and analyte only when:
+
+1. **Role:** it is a `holds` (in any role, so a misread role is still corrected by one ruling), or it is in the
+   reading's own role, or the reading is `not_read`. "Does not interfere with the assay" no longer retires
+   "causes hyperkalaemia". To dismiss a misread that is no effect at all, the curator rules `does_not_hold` on
+   the machine's role.
+2. **Co-medication:** it has the reading's co-medication (`none` = `none`, drug E = drug E). "Not more dangerous
+   with E" no longer retires the drug's standalone reading.
+3. **Direction:** it has the reading's direction, or the *ruling* is `unspecified`. A ruling on *high* answers an
+   `unspecified` reading only under `high`; the reading stays listed under `low`, and its question stays open,
+   until *low* is ruled or an `unspecified` ruling is made.
+
+A new view, `lab_effect_open_label_statement`, holds the rule once; the read view and the worklist both read
+it. Also from this review:
+the coverage view ranks a drug's own `cannot_establish` above `ruled_no_effect`, so a class-level "does not hold"
+for all four roles never overrules a drug-specific "the sources do not settle it"; the writer refuses a class
+ruling that reaches no drug; the replay reports a class ruling exported without its reach row, and a reach row
+whose ruling is missing; and a label statement is `via_pathway` only if every term it was read from is.

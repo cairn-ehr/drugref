@@ -9,17 +9,19 @@
 --
 -- A SIBLING OF curated_property_ruling (db/058), copied on purpose: the same AFTER floor
 -- (AFTER because Postgres computes STORED generated columns after BEFORE triggers run;
--- db/058's preamble has the measurement), the same deferred single-live guard, the same
--- live-key and by-question indexes, the same signature registration. Both trigger
--- functions are generic over the natural key, so this file adds no PL/pgSQL.
+-- db/058's floor-trigger comment has the measurement), the same deferred single-live
+-- guard, the same live-key and by-question indexes, the same signature registration.
+-- Both trigger functions are generic over the natural key, so this file adds no
+-- PL/pgSQL.
 --
 -- THE NATURAL KEY has seven columns: subject (kind + uuid), analyte, direction, role,
 -- co-medication (kind + uuid). Role and direction are IN the key because one drug can
 -- hold several true facts about one analyte (clozapine CAUSES low neutrophils AND has a
--- MONITORING protocol for them). The read view nevertheless treats a (moiety, analyte)
--- pair as the REVIEW UNIT (spec 6.5): any live moiety ruling answers every machine
--- reading for that pair, so a curator can correct a misread role without first
--- refuting the machine's guess.
+-- MONITORING protocol for them). Which machine readings a ruling answers is db/092's
+-- rule 1 (spec 6.5 as amended by sections 12 and 13): the same drug, analyte,
+-- direction and co-medication, and a `holds` in any role -- so a curator can correct a
+-- misread role without first refuting the machine's guess -- or a does_not_hold /
+-- cannot_establish in the reading's own role.
 --
 -- WHY GENERATED COLUMNS: forbid_multiple_live_assertions raises on a NULL key column
 -- (NULL = NULL is never true, so the guard would guard nothing). The optional
@@ -138,10 +140,11 @@ ON CONFLICT (target_kind) DO NOTHING;
 -- ============================================================================
 -- 2. lab_effect_class_member -- who a class lab-effect ruling reaches
 -- ============================================================================
--- The class profiles' member rule (db/059 class_profile_member: DIRECT members,
--- MED-RT PK classes excluded), expanded down the class DAG by class_subtree, so a
--- ruling on a parent class reaches a drug tagged only to a subclass, and a class
--- profile and a lab effect never disagree about who is in a class.
+-- The class profiles' LEAF rule (db/059 class_profile_member: DIRECT members, MED-RT
+-- PK classes excluded), then expanded down the class DAG by class_subtree, so a
+-- ruling on a parent class reaches a drug tagged only to a subclass. Unlike the
+-- profiles' own member count, which is direct-only (a subclass-only drug goes to
+-- db/060's class_subclass_only_member instead).
 CREATE OR REPLACE VIEW drugref.lab_effect_class_member AS
 SELECT DISTINCT st.root_uuid AS class_uuid, m.moiety_uuid
 FROM   drugref.class_subtree st

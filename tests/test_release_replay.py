@@ -565,6 +565,26 @@ def test_a_class_lab_effect_ruling_replays_with_its_reach(lab_published):
     assert set(members) == {ids.mint_moiety_uuid(X), ids.mint_moiety_uuid(Y)}
 
 
+def test_a_class_lab_ruling_exported_without_its_reach_is_a_difference(lab_published):
+    """Every class ruling is snapshotted when made, so a missing reach row is a
+    broken export, not a moiety ruling (#258's audit row would be gone)."""
+    export = archive.curated_export_path(lab_published["root"], TAG)
+    _edit(export, lambda b: b["curated_lab_effect_reach"].clear())
+    assert _replay(lab_published).differences == [
+        f"lab-effect class ruling {lab_published['ruling']}: the export lacks its "
+        "reach row"]
+
+
+def test_a_lab_reach_row_whose_ruling_is_not_exported_is_a_difference(lab_published):
+    export = archive.curated_export_path(lab_published["root"], TAG)
+    _edit(export, lambda b: b["curated_lab_effect"].clear())
+    differences = _replay(lab_published).differences
+    # The manifest comparison also misses the ruling; the reach row is the new news.
+    assert (f"curated_lab_effect_reach {lab_published['ruling']}: its ruling is not "
+            "in the export") in differences
+    assert len(differences) == 2
+
+
 def test_a_lab_effect_reach_the_replay_does_not_rebuild_is_a_difference(lab_published):
     export = archive.curated_export_path(lab_published["root"], TAG)
     _edit(export, lambda b: b["curated_lab_effect_reach"][0]["members"].pop())

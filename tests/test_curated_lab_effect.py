@@ -92,6 +92,7 @@ def test_a_co_medication_is_part_of_the_key(world):
     "onset_reversed", "onset_negative", "role_not_read"])
 def test_the_checks_refuse(world, bad):
     conn, r, a, p = world
+    w.member(conn, r, a, p)          # so a class ruling reaches someone
     kw = {"two_co_medications": dict(subject_moiety_uuid=a,
                                      co_medication_moiety_uuid=w.moiety(conn, r, "b"),
                                      co_medication_class_uuid=p),
@@ -142,10 +143,13 @@ def test_a_class_ruling_snapshots_a_subclass_member(world):
     assert _reach(conn, rid) == ([a], "at_ruling")
 
 
-def test_a_class_with_no_members_snapshots_an_empty_reach(world):
+def test_a_class_ruling_that_reaches_no_drug_is_refused(world):
+    """A ruling on a class with no members (or a MED-RT PK class, which
+    lab_effect_class_member excludes) would state nothing about any drug."""
     conn, _r, _a, p = world
-    rid, _ = _rule(conn, subject_class_uuid=p)
-    assert _reach(conn, rid) == ([], "at_ruling")
+    with pytest.raises(ValueError, match="reaches no drug"):
+        _rule(conn, subject_class_uuid=p)
+    assert _live(conn, p) == []
 
 
 def test_a_moiety_ruling_has_no_reach(world):
@@ -166,7 +170,8 @@ def test_a_corrected_class_ruling_snapshots_again_under_its_new_id(world):
 
 
 def test_the_reach_is_insert_only(world):
-    conn, _r, _a, p = world
+    conn, r, a, p = world
+    w.member(conn, r, a, p)
     _rule(conn, subject_class_uuid=p)
     with pytest.raises(psycopg.errors.RaiseException, match="insert-only"):
         conn.execute("UPDATE drugref.curated_lab_effect_reach SET members = '{}'")
@@ -177,3 +182,57 @@ def test_a_ruling_is_a_signed_released_kind():
     assert signing_contexts.NATURAL_KEY_COLUMNS["curated_lab_effect/v1"] == (
         "subject_kind", "subject_uuid", "analyte_code", "direction", "role",
         "co_medication_kind", "co_medication_uuid")
+
+
+def _raw_live(conn, a, *, direction="high", role="causes", co=None):
+    """A live row INSERTed directly, bypassing the writer's supersede."""
+    conn.execute(
+        "INSERT INTO drugref.curated_lab_effect (subject_moiety_uuid, analyte_code, "
+        "direction, role, co_medication_moiety_uuid, verdict, source, reviewed_by, "
+        "reviewed_against) VALUES (%s, 'potassium', %s, %s, %s, 'holds', "
+        "'DRUGREF', 'Dr X', 'label')", (a, direction, role, co))
+
+
+def test_the_single_live_guard_refuses_two_live_rows_on_one_key(world):
+    """The guard is DEFERRED and the conn fixture never commits: fire it by hand."""
+    conn, _r, a, _p = world
+    _raw_live(conn, a)
+    _raw_live(conn, a)
+    with pytest.raises(psycopg.errors.RaiseException, match="live rows"):
+        conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
+
+def test_the_single_live_guard_keys_on_role_direction_and_co_medication(world):
+    """Rows differing only in role, direction or co-medication survive the deferred
+    check, so those columns really are in the guard's key (the two key tests above
+    go through the writer, whose rows the deferred guard never sees)."""
+    conn, r, a, _p = world
+    _raw_live(conn, a)
+    _raw_live(conn, a, role="monitoring")
+    _raw_live(conn, a, direction="low")
+    _raw_live(conn, a, co=w.moiety(conn, r, "warfarin"))
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")      # no raise
+
+
+def test_the_guard_key_is_the_signed_natural_key(conn):
+    (args,) = conn.execute(
+        "SELECT tgargs FROM pg_trigger WHERE tgname = 'curated_lab_effect_single_live'"
+    ).fetchone()
+    cols = tuple(bytes(args).decode().rstrip("\x00").split("\x00"))
+    assert cols[-7:] == signing_contexts.NATURAL_KEY_COLUMNS["curated_lab_effect/v1"]
+
+
+@pytest.mark.parametrize("subject", ["class", "co_medication_class"])
+def test_re_recording_a_class_or_co_medication_ruling_writes_nothing(world, subject):
+    """The writer recomputes db/090's generated key columns in Python to find the live
+    row; a drift there would make every re-run a new live row."""
+    conn, r, a, p = world
+    w.member(conn, r, a, p)
+    kw = ({"subject_class_uuid": p} if subject == "class" else
+          {"subject_moiety_uuid": a, "co_medication_class_uuid": p})
+    rid, _ = _rule(conn, **kw)
+    assert _rule(conn, **kw) == (rid, False)
+    new, written = _rule(conn, onset_max_days=9, **kw)
+    assert written and conn.execute(
+        "SELECT superseded_by FROM drugref.curated_lab_effect "
+        "WHERE curated_lab_effect_id = %s", (rid,)).fetchone() == (new,)

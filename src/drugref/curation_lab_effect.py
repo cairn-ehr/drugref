@@ -49,8 +49,9 @@ def snapshot_reach(conn: psycopg.Connection, curated_lab_effect_id: int) -> int:
     """Write the class ruling's current reach into curated_lab_effect_reach.
 
     One row: the sorted members of the ruling's subject class (empty array if it
-    reached no one). Returns the number of members written. Call it after the ruling
-    is live. Does not commit.
+    reached no one -- record_lab_effect_ruling refuses such a ruling first). Returns
+    the number of members written, also 0 when no row is written (a moiety ruling or
+    an unknown id). Call it after the ruling is live. Does not commit.
     """
     members = conn.execute(
         "INSERT INTO drugref.curated_lab_effect_reach "
@@ -85,11 +86,20 @@ def record_lab_effect_ruling(
 
     A given question_uuid must be the (moiety, analyte) worklist question for this
     ruling's own subject and analyte, else ValueError; a class subject can cite none.
+    A class subject that reaches no drug is refused (ValueError) before anything is
+    written.
     """
     if (subject_class_uuid is None) == (subject_moiety_uuid is None):
         raise ValueError("give exactly one of subject_class_uuid / subject_moiety_uuid")
     questions.require_question_for(
         conn, question_uuid, answerable_questions(subject_moiety_uuid, analyte_code))
+    # A class no drug is a member of (or a MED-RT PK class, which the member rule
+    # excludes) would be a ruling about nobody, accepted without a word.
+    if subject_class_uuid is not None and conn.execute(
+            "SELECT NOT EXISTS (SELECT 1 FROM drugref.lab_effect_class_member "
+            "WHERE class_uuid = %s)", (subject_class_uuid,)).fetchone()[0]:
+        raise ValueError(f"class {subject_class_uuid} reaches no drug "
+                         "(lab_effect_class_member): rule on its members instead")
     # The generated key columns, computed as db/090 computes them, to find the live row.
     # (Two co-medications are left for the CHECK to refuse on INSERT.)
     co_kind, co_uuid = (("moiety", co_medication_moiety_uuid)

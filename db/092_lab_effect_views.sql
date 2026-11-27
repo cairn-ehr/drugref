@@ -6,6 +6,7 @@
 --   lab_effect_label_evidence  -- EVIDENCE grain: one row per citing label occurrence
 --   lab_effect_label_statement -- one row per machine-read (drug, analyte, direction,
 --                                 role, co-medication) statement
+--   lab_effect_open_label_statement -- those no moiety ruling has answered (rule 1)
 --   lab_effect                 -- THE READ VIEW: what drugref currently states
 --   lab_effect_coverage        -- THE COVERAGE VIEW: "no statement" vs "no effect"
 --   gap_unconfirmed_label_lab_effect -- the curator worklist
@@ -13,18 +14,25 @@
 -- GRAIN IN THE NAME, as db/051 and db/066 insist: count(*) on the evidence view is
 -- never a statement count.
 --
--- THE PRECEDENCE RULES (spec 6.5), in one place because every view below obeys them:
---   1. The REVIEW UNIT is (moiety, analyte, direction). Any live moiety ruling on an
---      analyte in a direction, of any verdict, answers EVERY machine reading for that
---      moiety, analyte and direction: the readings leave the read view (they stay in
---      the evidence view). So a curator corrects a misread role by ruling the right
---      one, without refuting the machine's guess. 'unspecified' on either side matches
---      both directions (the curator settles an unread direction). A ruling on potassium
---      LOW does NOT answer a potassium HIGH reading (final review, finding 4).
+-- THE PRECEDENCE RULES (spec 6.5 as amended by sections 12 and 13), in one place
+-- because every view below obeys them:
+--   1. WHICH READINGS A MOIETY RULING ANSWERS. A live moiety ruling answers a machine
+--      reading of the same drug and analyte when ALL of these hold:
+--        - the same co-medication (none = none, drug E = drug E): "not more dangerous
+--          with E" is no review of a standalone "causes" (spec 13.2);
+--        - the same direction, or the RULING is 'unspecified'. A ruling on potassium
+--          LOW does not answer a HIGH reading (12.1), and a ruling on HIGH answers an
+--          'unspecified' reading only under HIGH: its LOW half stays listed (13.3);
+--        - the ruling is a `holds` (any role: a curator corrects a misread role by
+--          ruling the right one, without refuting the machine's guess), OR it is in
+--          the reading's own role, OR the reading's role is not_read. So "does not
+--          interfere with the assay" leaves "causes hyperkalaemia" standing (13.1).
+--      An answered reading leaves the read view (it stays in the evidence view).
 --   2. A class `holds` reaches every member (lab_effect_class_member, db/090).
---   3. A moiety does_not_hold on the SAME seven-column key as a class `holds` carves
---      that member out (an exception). cannot_establish does not: "the sources do not
---      settle it for this drug" is no exception to the class (finding 3).
+--   3. A moiety does_not_hold on the class `holds`'s key, the subject apart (same
+--      analyte, direction, role and co-medication), carves that member out (an
+--      exception). cannot_establish does not: "the sources do not settle it for this
+--      drug" is no exception to the class (12.3).
 --   4. A CLASS ruling NEVER hides a member's label readings: fewer rows is the harm
 --      direction (the repo's standing rule: a signature never gates a read), so one
 --      class does_not_hold must not silence every member's labels.
@@ -88,7 +96,8 @@ SELECT subject_moiety,
        min(section_rank)                              AS section_rank,
        count(DISTINCT set_id)                         AS label_count,
        array_agg(DISTINCT term_id ORDER BY term_id)   AS stated_as,
-       bool_or(via_pathway)                           AS via_pathway
+       -- Pathway-ONLY: one direct term among the wording makes the statement direct.
+       bool_and(via_pathway)                          AS via_pathway
 FROM   drugref.lab_effect_label_evidence
 -- A precondition ("do not use in patients with hyperkalemia") is not an effect.
 WHERE  role_read <> 'not_an_effect'
@@ -100,6 +109,43 @@ COMMENT ON VIEW drugref.lab_effect_label_statement IS
     'co-medication). strongest_section / section_rank are the grade (owner ruling A: '
     'record and grade, the consumer filters); label_count counts DISTINCT labels; '
     'stated_as is the label wording (term ids). not_an_effect readings excluded. '
+    'MACHINE-READ, NOT CONFIRMED (#294).';
+
+-- ============================================================================
+-- 2b. lab_effect_open_label_statement -- rule 1, stated ONCE
+-- ============================================================================
+-- Each statement with the query directions no live moiety ruling answers yet. An
+-- 'unspecified' statement is asked about under high AND low, and each half is
+-- answered on its own. Both the read view (3d) and the worklist (5) read this, so the
+-- two cannot disagree about what is answered. It deliberately does NOT read
+-- lab_effect, which joins current_release: a database whose current_release is gone
+-- (one predating db/081) must keep its worklist.
+CREATE OR REPLACE VIEW drugref.lab_effect_open_label_statement AS
+SELECT st.*, od.open_directions
+FROM   drugref.lab_effect_label_statement st
+CROSS  JOIN LATERAL (
+    SELECT ARRAY(
+        SELECT q FROM unnest(CASE WHEN st.direction = 'unspecified'
+                                  THEN ARRAY['high', 'low']
+                                  ELSE ARRAY[st.direction] END) AS q
+        WHERE  NOT EXISTS (
+                   SELECT 1 FROM drugref.curated_lab_effect x
+                   WHERE  x.superseded_by IS NULL
+                     AND  x.subject_kind = 'moiety'
+                     AND  x.subject_uuid = st.subject_moiety
+                     AND  x.analyte_code = st.analyte_code
+                     AND  x.co_medication_kind = st.co_medication_kind
+                     AND  x.co_medication_uuid = st.co_medication_uuid
+                     AND  x.direction IN (q, 'unspecified')
+                     AND  (x.verdict = 'holds' OR x.role = st.role_read
+                           OR st.role_read = 'not_read'))) AS open_directions
+) od
+WHERE  cardinality(od.open_directions) > 0;
+
+COMMENT ON VIEW drugref.lab_effect_open_label_statement IS
+    'lab_effect_label_statement rows no live moiety ruling has fully answered (db/092 '
+    'rule 1), with open_directions = the query directions (high / low) still '
+    'unanswered. What the read view lists as label rows and the worklist asks about. '
     'MACHINE-READ, NOT CONFIRMED (#294).';
 
 -- ============================================================================
@@ -117,7 +163,9 @@ WITH live AS (
            'curated'::text AS basis, true AS confirmed, false AS via_pathway,
            NULL::text AS strongest_section, NULL::integer AS section_rank,
            NULL::bigint AS label_count, NULL::text[] AS stated_as,
-           r.curated_lab_effect_id, r.onset_min_days, r.onset_max_days, r.method
+           r.curated_lab_effect_id, r.onset_min_days, r.onset_max_days, r.method,
+           -- Only a label row (3d) narrows the query directions it is listed under.
+           NULL::text[] AS open_directions
     FROM   live r
     WHERE  r.subject_kind = 'moiety' AND r.verdict = 'holds'
     UNION ALL
@@ -125,17 +173,17 @@ WITH live AS (
     SELECT r.analyte_code, r.direction, 'class', r.subject_class_uuid, NULL,
            r.role, r.co_medication_kind, r.co_medication_uuid,
            'curated', true, false, NULL, NULL, NULL, NULL,
-           r.curated_lab_effect_id, r.onset_min_days, r.onset_max_days, r.method
+           r.curated_lab_effect_id, r.onset_min_days, r.onset_max_days, r.method, NULL
     FROM   live r
     WHERE  r.subject_kind = 'class' AND r.verdict = 'holds'
     UNION ALL
     -- 3c. ... and its members (rule 2), minus a member with its own does_not_hold on
-    -- the same key (rule 3). A member's holds is already in 3a, so it is left out
-    -- here too rather than listed twice.
+    -- the same key, the subject apart (rule 3). A member's holds on that key is
+    -- already in 3a, so it is left out here too rather than listed twice.
     SELECT r.analyte_code, r.direction, 'moiety', m.moiety_uuid, r.subject_class_uuid,
            r.role, r.co_medication_kind, r.co_medication_uuid,
            'curated', true, false, NULL, NULL, NULL, NULL,
-           r.curated_lab_effect_id, r.onset_min_days, r.onset_max_days, r.method
+           r.curated_lab_effect_id, r.onset_min_days, r.onset_max_days, r.method, NULL
     FROM   live r
     JOIN   drugref.lab_effect_class_member m ON m.class_uuid = r.subject_class_uuid
     WHERE  r.subject_kind = 'class' AND r.verdict = 'holds'
@@ -147,19 +195,13 @@ WITH live AS (
                  AND  x.co_medication_uuid = r.co_medication_uuid
                  AND  x.verdict IN ('does_not_hold', 'holds'))
     UNION ALL
-    -- 3d. Machine-read label statements, unless a moiety ruling of ANY verdict
-    -- answers the (moiety, analyte, direction) (rule 1). Class rulings do not (rule 4).
+    -- 3d. Machine-read label statements, in each query direction no moiety ruling
+    -- answers (rule 1, in 2b; class rulings never do, rule 4).
     SELECT st.analyte_code, st.direction, 'moiety', st.subject_moiety, NULL,
            st.role_read, st.co_medication_kind, st.co_medication_uuid,
            'label', false, st.via_pathway, st.strongest_section, st.section_rank,
-           st.label_count, st.stated_as, NULL, NULL, NULL, NULL
-    FROM   drugref.lab_effect_label_statement st
-    WHERE  NOT EXISTS (
-               SELECT 1 FROM live x
-               WHERE  x.subject_kind = 'moiety' AND x.subject_uuid = st.subject_moiety
-                 AND  x.analyte_code = st.analyte_code
-                 AND  (x.direction = st.direction OR 'unspecified' IN (x.direction,
-                                                                       st.direction)))
+           st.label_count, st.stated_as, NULL, NULL, NULL, NULL, st.open_directions
+    FROM   drugref.lab_effect_open_label_statement st
 )
 SELECT a.analyte_code,
        qd.query_direction,
@@ -191,25 +233,32 @@ SELECT a.analyte_code,
        cardinality(cr.drift_reasons) > 0 AS release_drifted
 FROM   arms a
 JOIN   drugref.lab_analyte an ON an.analyte_code = a.analyte_code
--- An 'unspecified' direction answers BOTH questions, so it is listed under both.
-CROSS  JOIN LATERAL unnest(CASE WHEN a.direction = 'unspecified'
-                                THEN ARRAY['high', 'low']
-                                ELSE ARRAY[a.direction] END) AS qd(query_direction)
+-- An 'unspecified' direction answers BOTH questions, so it is listed under both --
+-- except a label row's half that a ruling already answered (3d's open_directions).
+CROSS  JOIN LATERAL unnest(COALESCE(a.open_directions,
+                                    CASE WHEN a.direction = 'unspecified'
+                                         THEN ARRAY['high', 'low']
+                                         ELSE ARRAY[a.direction] END))
+       AS qd(query_direction)
 -- LEFT: current_release has NO row in a database with no published release, and an
 -- inner join would empty the whole read view there.
 LEFT   JOIN drugref.current_release cr ON true;
 
 COMMENT ON VIEW drugref.lab_effect IS
-    'THE READ VIEW (#294): one row per (analyte, query_direction, subject, role, '
-    'co-medication) drugref currently states. Filter on query_direction: a row whose '
-    'direction is unspecified is listed under both high and low. basis = curated '
-    '(confirmed = true, a live holds ruling, its class''s members included with '
-    'reached_via_class_uuid) or label (confirmed = false, MACHINE-READ; role may be '
-    'not_read). A moiety ruling of any verdict on an analyte and direction replaces that '
-    'drug''s label rows for them; a member''s own does_not_hold on the same key carves '
-    'it out of a class ruling; a class ruling never hides a member''s label rows. strongest_section '
-    '/ section_rank are the grade. release_tag / release_drifted are NULL when no '
-    'release is published. Absence of a row is NOT "no effect": read lab_effect_coverage.';
+    'THE READ VIEW (#294): the (analyte, query_direction, subject, role, '
+    'co-medication) facts drugref currently states; one fact may have both a curated '
+    'and a label row, and an unspecified and a directed row. Filter on '
+    'query_direction: a row whose direction is unspecified is listed under both high '
+    'and low. basis = curated (confirmed = true, a live holds ruling, its class''s '
+    'members included with reached_via_class_uuid) or label (confirmed = false, '
+    'MACHINE-READ; role may be not_read). A moiety ruling with the same co-medication '
+    'and direction replaces that drug''s label rows: a holds in any role, '
+    'does_not_hold / cannot_establish only in the read role (or not_read). A '
+    'member''s own does_not_hold on the same key carves it out of a class ruling; a '
+    'class ruling never hides a member''s label rows. strongest_section / '
+    'section_rank are the grade. release_tag / release_drifted are NULL when no '
+    'release is published. Absence of a row is NOT "no effect": read '
+    'lab_effect_coverage.';
 
 -- ============================================================================
 -- 4. lab_effect_coverage -- "no statement" told apart from "no effect" (spec 8)
@@ -217,14 +266,16 @@ COMMENT ON VIEW drugref.lab_effect IS
 -- One row per (drug, analyte, direction) for every drug in the registry, with exactly
 -- one state; the first that applies wins:
 --   stated                 -- lab_effect has a row (any role, either basis)
+--   cannot_establish       -- the drug's own curator looked and the sources do not
+--                             settle it. Ahead of ruled_no_effect, so a class-level
+--                             "no" never overrules it.
 --   ruled_no_effect        -- a live does_not_hold with NO co-medication, the drug's
 --                             own or a class's that reaches it, for EVERY ONE of the
 --                             four roles. THE ONLY "NO EFFECT" drugref ever states.
 --                             Ruling out one role ("does not interfere") or one
 --                             combination ("not with drug B") is not "no effect"
---                             (final review, finding 2): ruled_out_roles lists what
---                             was ruled out, and the state falls through.
---   cannot_establish       -- a curator looked and the sources do not settle it
+--                             (spec 12.2): ruled_out_roles lists what was ruled out,
+--                             and the state falls through.
 --   examined_nothing_found -- drugref read at least one label for this drug and found
 --                             nothing for this analyte. A label that does not mention
 --                             hyperkalaemia is NOT evidence of no hyperkalaemia:
@@ -250,13 +301,15 @@ SELECT m.moiety_uuid,
                         AND  le.analyte_code = an.analyte_code
                         AND  le.query_direction = d.direction)
            THEN 'stated'
-         WHEN cardinality(ro.ruled_out_roles) = 4 THEN 'ruled_no_effect'
+         -- Before ruled_no_effect: a drug-specific "the sources do not settle it"
+         -- is never overruled by a class-level "no".
          WHEN EXISTS (SELECT 1 FROM live x
                       WHERE  x.verdict = 'cannot_establish'
                         AND  x.subject_kind = 'moiety' AND x.subject_uuid = m.moiety_uuid
                         AND  x.analyte_code = an.analyte_code
                         AND  x.direction IN (d.direction, 'unspecified'))
            THEN 'cannot_establish'
+         WHEN cardinality(ro.ruled_out_roles) = 4 THEN 'ruled_no_effect'
          WHEN e.moiety_uuid IS NOT NULL THEN 'examined_nothing_found'
          ELSE 'not_examined'
        END AS state,
@@ -289,7 +342,7 @@ CROSS  JOIN LATERAL (
 
 COMMENT ON VIEW drugref.lab_effect_coverage IS
     'THE COVERAGE VIEW (#294): one row per (drug, analyte, direction high/low) with one '
-    'state -- stated, ruled_no_effect, cannot_establish, examined_nothing_found, '
+    'state -- stated, cannot_establish, ruled_no_effect, examined_nothing_found, '
     'not_examined (first that applies). ONLY ruled_no_effect means "no effect", and it '
     'needs a co-medication-free does_not_hold for ALL FOUR roles; ruled_out_roles lists '
     'the roles ruled out so far. examined_nothing_found (a label was read and did not '
@@ -300,9 +353,8 @@ COMMENT ON VIEW drugref.lab_effect_coverage IS
 -- ============================================================================
 -- 5. The worklist -- machine readings no curator has answered
 -- ============================================================================
--- One question per (drug, analyte) while ANY of its label readings is unanswered: a
--- reading is answered by a live moiety ruling on that analyte in its direction
--- ('unspecified' on either side matches), rule 1.
+-- One question per (drug, analyte) while ANY of its label readings is unanswered: the
+-- same open statements the read view lists as label rows (2b, rule 1).
 CREATE OR REPLACE VIEW drugref.gap_unconfirmed_label_lab_effect AS
 SELECT st.subject_moiety AS moiety_uuid,
        st.analyte_code,
@@ -313,18 +365,12 @@ SELECT st.subject_moiety AS moiety_uuid,
         WHERE  ev.subject_moiety = st.subject_moiety
           AND  ev.analyte_code = st.analyte_code
           AND  ev.role_read <> 'not_an_effect') AS label_count
-FROM   drugref.lab_effect_label_statement st
-WHERE  NOT EXISTS (SELECT 1 FROM drugref.curated_lab_effect x
-                   WHERE  x.superseded_by IS NULL AND x.subject_kind = 'moiety'
-                     AND  x.subject_uuid = st.subject_moiety
-                     AND  x.analyte_code = st.analyte_code
-                     AND  (x.direction = st.direction
-                           OR 'unspecified' IN (x.direction, st.direction)))
+FROM   drugref.lab_effect_open_label_statement st
 GROUP  BY st.subject_moiety, st.analyte_code;
 
 COMMENT ON VIEW drugref.gap_unconfirmed_label_lab_effect IS
     'Gap kind unconfirmed_label_lab_effect: one row per (drug, analyte) with a label '
-    'reading no live moiety ruling answers (same analyte, same direction); section_rank '
+    'reading no live moiety ruling answers (lab_effect_open_label_statement); section_rank '
     'is the strongest grade among them, label_count distinct labels for the pair. '
     'MACHINE-READ, NOT CONFIRMED, never an assertion, and "not confirmed" is NOT "safe". '
     'Frozen gap key: LABEFFECT:<moiety_uuid>:<analyte_code>.';

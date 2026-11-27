@@ -406,7 +406,8 @@ def test_apply_migrations_is_idempotent(conn):
         "curated_lab_effect", "lab_effect_class_member", "curated_lab_effect_reach",
         "spl_lab_label", "spl_lab_label_subject", "spl_lab_wording",
         "spl_lab_label_section", "spl_lab_effect_occurrence",
-        "lab_effect_label_evidence", "lab_effect_label_statement", "lab_effect",
+        "lab_effect_label_evidence", "lab_effect_label_statement",
+        "lab_effect_open_label_statement", "lab_effect",
         "lab_effect_coverage", "gap_unconfirmed_label_lab_effect",
     }
 

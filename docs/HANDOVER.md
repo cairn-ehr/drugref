@@ -22,9 +22,9 @@ a pure term + role reader beside `spl_advice.py` (pin its terms to `lab_effect_t
 (+ its replay adapter and source-clear order: both exempted in tests until then), the test-set comparison, and a
 precision sample scoring **role and direction separately**. First check `spl_match` / `spl_advice_scope` on
 sections other than 34073-7. Also owed: the subject `resolution` vocabulary, quotes with their own 25% budget
-trigger (never `drug_interactions`), a combination-label rule. **Step 4:** the Rust reviewer service must write the
-class-ruling reach snapshot (Python-only today). **Owner:** should a ruling retire label readings only when it
-cites the pair's question (spec §12)? **Also next:** #302 (review minors), #301, #299, #293, #295/#298, #297, #292.
+trigger (never `drug_interactions`), a combination-label rule. **Step 4:** Rust must snapshot class reach and refuse
+a class reaching no drug (Python-only today). **Owner ruled 2026-11-28 (spec §13)** on which readings a ruling hides;
+**open:** only when it cites the pair's question (§12)? **Next:** #302, #301, #299, #293, #295/#298, #297, #292.
 
 **⇒ OWNER, from #270:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
 archives are node-local; decide before they are shared (with #263). **#275**: the question bookkeeping and
@@ -91,7 +91,7 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 
 ## Open follow-ups
 
-Full ledger: [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **Open: #285, #292–#295, #297–#299,
+Full ledger: [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **Open: #285, #292, #293, #295, #297–#299,
 #301, #302;** **open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); #224 partly done.
 **#244.** **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203,
 #204. From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155**,

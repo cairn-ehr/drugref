@@ -97,6 +97,17 @@ def test_a_new_class_ruling_is_drift(conn, ingest_run_id):
     assert current_release(conn).drift_reasons == ("re-curated",)
 
 
+def test_a_new_lab_effect_ruling_is_drift(conn, a_moiety):
+    """db/090's probe on curated_lab_effect, checked on its own like the one above."""
+    _publish(conn)
+    conn.execute(
+        "INSERT INTO drugref.curated_lab_effect (subject_moiety_uuid, analyte_code, "
+        "direction, role, verdict, source, reviewed_by, reviewed_against, reviewed_at) "
+        "VALUES (%s, 'potassium', 'high', 'causes', 'holds', 'DRUGREF', 't', 'x', "
+        f"{LATER})", (a_moiety,))
+    assert current_release(conn).drift_reasons == ("re-curated",)
+
+
 def test_a_policy_row_is_drift(conn):
     _publish(conn)
     conn.execute(

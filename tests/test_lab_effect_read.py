@@ -2,9 +2,11 @@
 
 DB-gated. lab_effect is the contract ReportTriage reads: for an analyte and a
 direction, which drugs and classes matter and in which role. These tests pin its
-precedence rules (design spec 6.5 and 7): a moiety ruling answers every machine
-reading for its (moiety, analyte); a class ruling reaches its members, a member's own
-does_not_hold carves it out; a class ruling never hides a member's label readings.
+precedence rules (design spec 6.5 and 7, as amended by sections 12 and 13): a moiety
+`holds` answers the machine readings for its (moiety, analyte, direction,
+co-medication) in any role, a does_not_hold or cannot_establish only those in its own
+role (or not_read); a class ruling reaches its members, a member's own does_not_hold
+carves it out; a class ruling never hides a member's label readings.
 """
 import uuid
 
@@ -81,11 +83,11 @@ def test_a_curator_role_correction_replaces_the_machine_reading(world):
         "WHERE subject_moiety = %s", (a,)).fetchall() == [("causes",)]
 
 
-def test_a_not_read_reading_is_shown_until_any_ruling_on_the_analyte(world):
+def test_a_not_read_reading_is_answered_by_a_ruling_in_any_role(world):
     conn, _r, run, a = world
     lw.reading(conn, run, "k1", "hyperkalemia", role_read="not_read")
     assert _rows(conn, a, "role, basis") == [("not_read", "label")]
-    _rule(conn, subject_moiety_uuid=a, verdict="does_not_hold")
+    _rule(conn, subject_moiety_uuid=a, role="monitoring", verdict="does_not_hold")
     assert _rows(conn, a) == []
 
 
@@ -177,7 +179,7 @@ def test_an_unresolved_subject_states_nothing(world):
 
 
 def test_a_member_cannot_establish_does_not_carve_it_out(world):
-    """Review finding 3: only a does_not_hold is an exception to a class holds."""
+    """Spec 12.3: only a does_not_hold is an exception to a class holds."""
     conn, r, _run, a = world
     p = w.klass(conn, r, "ClassP")
     w.member(conn, r, a, p)
@@ -187,7 +189,7 @@ def test_a_member_cannot_establish_does_not_carve_it_out(world):
 
 
 def test_a_ruling_in_one_direction_does_not_hide_the_other(world):
-    """Review finding 4: a does_not_hold on potassium LOW is not a review of the
+    """Spec 12.1: a does_not_hold on potassium LOW is not a review of the
     label's potassium HIGH reading."""
     conn, _r, run, a = world
     lw.reading(conn, run, "k1", "hyperkalemia")
@@ -195,10 +197,111 @@ def test_a_ruling_in_one_direction_does_not_hide_the_other(world):
     assert _rows(conn, a, "query_direction, basis") == [("high", "label")]
 
 
-def test_a_ruling_resolves_an_unspecified_reading(world):
-    """An unspecified reading is answered by a ruling in either direction: the curator
-    is the one who settles the direction."""
+def test_a_directed_ruling_answers_an_unspecified_reading_in_its_direction_only(world):
+    """Owner ruling 2026-11-28 (spec 13.3): a ruling on INR high says nothing about
+    INR low, so the unread reading stays listed under low."""
     conn, _r, run, a = world
     lw.reading(conn, run, "k1", "inr_increased", direction_read="unspecified")
     _rule(conn, subject_moiety_uuid=a, analyte_code="inr")
-    assert _rows(conn, a, "query_direction, basis") == [("high", "curated")]
+    assert _rows(conn, a, "query_direction, basis") == [
+        ("high", "curated"), ("low", "label")]
+
+
+def test_an_unspecified_ruling_answers_both_halves_of_an_unspecified_reading(world):
+    conn, _r, run, a = world
+    lw.reading(conn, run, "k1", "inr_increased", direction_read="unspecified")
+    _rule(conn, subject_moiety_uuid=a, analyte_code="inr", direction="unspecified",
+          verdict="does_not_hold")
+    assert _rows(conn, a) == []
+
+
+def test_an_unspecified_ruling_answers_a_directed_reading(world):
+    conn, _r, run, a = world
+    lw.reading(conn, run, "k1", "hyperkalemia")
+    _rule(conn, subject_moiety_uuid=a, direction="unspecified", verdict="does_not_hold")
+    assert _rows(conn, a) == []
+
+
+@pytest.mark.parametrize("verdict", ["does_not_hold", "cannot_establish"])
+def test_a_negative_ruling_on_another_role_leaves_the_reading(world, verdict):
+    """Owner ruling 2026-11-28 (spec 13.1): "does not interfere with the assay" is no
+    review of the label's "causes hyperkalaemia"."""
+    conn, _r, run, a = world
+    lw.reading(conn, run, "k1", "hyperkalemia")
+    _rule(conn, subject_moiety_uuid=a, role="interferes", verdict=verdict)
+    assert _rows(conn, a, "role, basis") == [("causes", "label")]
+
+
+@pytest.mark.parametrize("verdict", ["does_not_hold", "cannot_establish"])
+def test_a_negative_ruling_on_the_read_role_retires_the_reading(world, verdict):
+    conn, _r, run, a = world
+    lw.reading(conn, run, "k1", "hyperkalemia")
+    _rule(conn, subject_moiety_uuid=a, verdict=verdict)
+    assert _rows(conn, a) == []
+
+
+def test_a_co_medication_ruling_leaves_the_standalone_reading(world):
+    """Owner ruling 2026-11-28 (spec 13.2): "not more dangerous with E" is no review
+    of the label's standalone "causes hyperkalaemia"."""
+    conn, r, run, a = world
+    e = w.moiety(conn, r, "drugE")
+    lw.reading(conn, run, "k1", "hyperkalemia")
+    _rule(conn, subject_moiety_uuid=a, role="more_dangerous", verdict="does_not_hold",
+          co_medication_moiety_uuid=e)
+    _rule(conn, subject_moiety_uuid=a, role="more_dangerous", direction="high",
+          co_medication_moiety_uuid=w.moiety(conn, r, "drugF"))
+    assert _rows(conn, a, "role, basis, co_medication_kind") == [
+        ("causes", "label", "none"), ("more_dangerous", "curated", "moiety")]
+
+
+def test_a_ruling_with_the_reading_co_medication_answers_it(world):
+    conn, r, run, a = world
+    e = w.moiety(conn, r, "drugE")
+    lw.reading(conn, run, "k1", "inr_increased", role_read="more_dangerous",
+               co_medication_moiety_uuid=e)
+    _rule(conn, subject_moiety_uuid=a, analyte_code="inr", role="more_dangerous",
+          verdict="does_not_hold", co_medication_moiety_uuid=e)
+    assert _rows(conn, a) == []
+
+
+def test_a_superseded_holds_no_longer_shows(world):
+    conn, _r, _run, a = world
+    _rule(conn, subject_moiety_uuid=a)
+    _rule(conn, subject_moiety_uuid=a, verdict="does_not_hold")
+    assert _rows(conn, a) == []
+
+
+@pytest.mark.parametrize("other", [
+    {"role": "interferes"}, {"co_medication": True}])
+def test_a_member_ruling_on_another_key_does_not_carve_it_out(world, other):
+    """Rule 3 carves out only on the class ruling's own key (bar the subject)."""
+    conn, r, _run, a = world
+    p = w.klass(conn, r, "ClassP")
+    w.member(conn, r, a, p)
+    _rule(conn, subject_class_uuid=p)
+    kw = ({"co_medication_moiety_uuid": w.moiety(conn, r, "drugE")}
+          if other.get("co_medication") else {"role": other["role"]})
+    _rule(conn, subject_moiety_uuid=a, verdict="does_not_hold", **kw)
+    assert _rows(conn, a, "basis, reached_via_class_uuid") == [("curated", p)]
+
+
+def test_a_member_own_holds_on_the_class_key_is_one_row(world):
+    conn, r, _run, a = world
+    p = w.klass(conn, r, "ClassP")
+    w.member(conn, r, a, p)
+    _rule(conn, subject_class_uuid=p)
+    _rule(conn, subject_moiety_uuid=a)
+    assert _rows(conn, a, "basis, reached_via_class_uuid") == [("curated", None)]
+
+
+def test_a_statement_with_a_direct_term_is_not_pathway_only(world):
+    """via_pathway means the analyte moves ONLY through a pathway: one direct term
+    among the statement's wording makes it direct."""
+    conn, _r, run, a = world
+    conn.execute("INSERT INTO drugref.lab_effect_term (term_id, analyte_code, "
+                 "direction, via_pathway) VALUES ('test_anaemia', 'haemoglobin', "
+                 "'low', false)")
+    lw.reading(conn, run, "k1", "bleeding")
+    assert _rows(conn, a, "via_pathway") == [(True,)]
+    lw.reading(conn, run, "k1", "test_anaemia", char_start=100)
+    assert _rows(conn, a, "via_pathway") == [(False,)]
