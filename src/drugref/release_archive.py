@@ -96,6 +96,9 @@ NOT_EXPORTED = {
     "fda_cyp_pathway": "a vocabulary db/043 seeds",
     "ddi_source_severity": "a vocabulary db/049 seeds",
     "spl_advice_level": "a vocabulary db/066 seeds",
+    "lab_analyte": "a vocabulary db/089 seeds",
+    "lab_effect_section": "a vocabulary db/089 seeds",
+    "lab_effect_term": "a vocabulary db/089 seeds",
     # Bookkeeping the replay produces for itself.
     "schema_migration": "the migration ledger: a replay migrates its target first",
     "ingest_run": "one row per run: the replay writes its own as it re-runs each",
