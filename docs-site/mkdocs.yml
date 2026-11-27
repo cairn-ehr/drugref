@@ -80,6 +80,7 @@ nav:
       - A drug is matched by its US label spelling too: decisions/us-label-spellings.md
       - Release tag as the decision-audit anchor: decisions/release-tag-as-the-audit-anchor.md
       - A reviewed grade never vanishes silently: decisions/a-reviewed-grade-never-vanishes-silently.md
+      - Lab effects are keyed to drugref's own analytes: decisions/lab-effects-keyed-to-analytes.md
   - Principles: principles/index.md
   - Data sources & licensing: sources/index.md
   - Roadmap: roadmap/index.md

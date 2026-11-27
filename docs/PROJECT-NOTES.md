@@ -309,9 +309,11 @@ intent (`question_state`), tier watermarks (`question_source_check`) and finding
 keyed off an immortal `question_uuid` external tooling can cite — so a rebuild can never erase a `withdrawn`. **Populated is
 per axis** (joins `ci_axis`). **Watermark, not closure:** only `withdrawn` is terminal. **A closed gap carrying curator work
 is retired, not deleted** (`is_current`) — the curated tables cascade from `open_question` *and* refuse `DELETE`. Rebuilt
-before commit by **five of the seven orchestrators**. **EIGHTEEN** gap kinds — twelve by Slice 3, then `db/029`'s
+before commit by **five of the seven orchestrators**. **TWENTY-ONE** gap kinds — twelve by Slice 3, then `db/029`'s
 two (5c.1), `db/031`'s `unresolved_onc_endpoint` (5c.2), `db/035`'s `uncurated_class_interaction_rule`, `db/039`'s
-`fda_cyp_unadjudicated` (5c.2g) and `db/049`'s `unresolved_ddi_endpoint` (DrugCentral). **This line said TWELVE for
+`fda_cyp_unadjudicated` (5c.2g), `db/049`'s `unresolved_ddi_endpoint` (DrugCentral), `db/061`'s
+`unconfirmed_class_property`, `db/066`'s `unconfirmed_label_class_statement` and `db/092`'s
+`unconfirmed_label_lab_effect` (#294; found saying EIGHTEEN, three stale, on 2026-11-27). **This line said TWELVE for
 four rounds after it stopped being true, and then said SIXTEEN for two more**, because each round updates its own
 section and not this one; the count belongs here, so **change it here** — and read it off `pg_constraint` rather
 than off this file. `db/049`'s own comment records that the live catalog already held SEVENTEEN where the plan that
@@ -7282,7 +7284,9 @@ graded_pair_departure_ack`) or the reviewer GUI (*Departed grades* → *Unsigned
   ack tests fail identically at the base commit (database state, not code). Frontend: `svelte-check` 0 errors,
   production build.
 
-## Drug effects on laboratory values (#294, 2026-11-27) — source evaluation only, no migration, suite 3752 → 3768
+## Drug effects on laboratory values (#294, 2026-11-27) — source evaluation (step 1), no migration, suite 3752 → 3768
+
+Step 2 (the model, `db/089`–`db/092`) is the next section.
 
 Step 1 of 4 (ROADMAP). The record is the
 [source evaluation](superpowers/specs/2026-11-27-drugref-lab-effects-source-evaluation.md); its figures come from
@@ -7316,6 +7320,49 @@ partitions in ~4 min and needs no database) and from `drugref_allergy` (MED-RT `
   (which keeps LOINC's field-of-use clause out of reach), with no LOINC codes in drugref tables, so the consumer
   maps; statements key to the MeSH `condition` registry plus a condition → (analyte, direction) map. A later
   LOINC crosswalk (separately noticed) stays open.
+
+## Lab effects: the model (#294 step 2, 2026-11-27) — `db/089`–`db/092`, tested on `drugref_test` only, suite 3768 → 3849
+
+[Design spec](superpowers/specs/2026-11-27-drugref-lab-effects-design.md) ·
+[plan](superpowers/plans/2026-11-27-drugref-lab-effects-model.md). The schema and views ReportTriage codes against;
+**no ingest yet**, so every label table is empty and the views are tested on fixture rows.
+
+- **Owner rulings (2026-11-27):** statements key to drugref's own **analyte + direction**, each analyte derived from
+  a MeSH descriptor (never LOINC), not to a MeSH condition: *INR high* has no condition (D019934 is a test), and
+  *Acute Kidney Injury* would turn trimethoprim's creatinine rise into kidney injury. The condition the label named
+  is kept as what it said (`lab_effect_term`). **The role is machine-read and unconfirmed**; no rule fired is
+  `not_read`, never a default `causes`. A curator table holds the exceptions and special rulings.
+- **`db/089`:** `lab_analyte` (7 analytes, the test set; `analyte_code` immortal, insert-only; one per MeSH
+  descriptor *and specimen*), `lab_effect_section` (the grade; the interference section ranks 5, after precautions),
+  `lab_effect_term` (14 terms; `condition_mesh_ui` is a MeSH UI, deliberately not an FK into the rebuildable
+  `condition` projection; `via_pathway` marks bleeding → haemoglobin).
+- **`db/090`:** `curated_lab_effect`, `db/058`'s sibling (AFTER floor, deferred single-live, signed as
+  `curated_lab_effect/v1` with a published vector, released, exported, replayed, in `current_release`'s
+  `re-curated` probe). Seven-column key: subject, analyte, direction, role, co-medication (coalesced to a kind + the
+  nil UUID). `lab_effect_class_member` = `class_subtree` × `class_profile_member` (the class profiles' rule, NOT
+  `class_rule_member`). `curated_lab_effect_reach`: one row per class ruling, `members uuid[]` (empty = reached no
+  one, so no `db/082`-style marker table), written by `curation_lab_effect.snapshot_reach`.
+- **`db/091`:** source **`SPL_LAB`**, writer `spl_lab_run`, and five empty `spl_lab_*` tables (label, subject,
+  wording, label section, occurrence). Its own source so neither SPL rebuild deletes the other's rows.
+- **`db/092`:** `lab_effect_label_evidence` (evidence grain), `lab_effect_label_statement`, **`lab_effect`** (the
+  read view), **`lab_effect_coverage`** (five states), `gap_unconfirmed_label_lab_effect` (gap kind 21, key
+  `LABEFFECT:<moiety>:<analyte>`, ranked by section).
+
+**Traps a later change can still break.**
+- **Role is in the ruling's key, but the REVIEW UNIT is (moiety, analyte).** Any live moiety ruling on an analyte,
+  any verdict, removes every label row for that drug and analyte from `lab_effect` and closes its question. That
+  is how a misread role is corrected. Keying the precedence on the full key would leave the wrong role showing.
+- **A class ruling never hides a member's label rows** (fewer rows is the harm direction). Only a member's own
+  ruling on the same key carves it out of a class `holds`.
+- **Filter `lab_effect` on `query_direction`, not `direction`:** an `unspecified` row is listed under both.
+- **`current_release` is LEFT-joined:** it has zero rows with no published release, and an inner join empties the
+  view (pinned).
+- **`via_pathway` is FALSE on curated rows** (a ruling states the analyte effect itself); only label rows inherit
+  it from their terms.
+- **The reach snapshot is written by the Python writer, not a trigger.** The reviewer service (Rust, step 4) must
+  write it too, or class rulings it records will have no reach row.
+- **The `ingest_run_writer` list was last set by `db/071`, not `db/067`** (the spec said `db/067`); `db/091` copies
+  `db/071`'s.
 
 ## The standing open-issue ledger
 
@@ -7732,7 +7779,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3768 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3849 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
