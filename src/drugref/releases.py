@@ -59,9 +59,10 @@ from drugref import signatures, signing, signing_contexts
 # `test_every_curated_catalog_kind_is_covered_by_a_release` derives its expectation
 # from the CATALOG, so any further kind registered in SQL and forgotten here fails
 # loudly rather than silently narrowing every future release.
-# FIVE since db/090 (lab-effect rulings, #294); four since db/058 (class profiles). db/088's `graded_pair_departure_ack` is
-# a signature kind but NOT release content (owner ruling, 2026-11-26, #284): a release
-# attests to the rulings consumers read, and an ack changes only what reviewers see.
+# FIVE since db/090 (lab-effect rulings, #294); four since db/058 (class profiles).
+# db/088's `graded_pair_departure_ack` is a signature kind but NOT release content
+# (owner ruling, 2026-11-26, #284): a release attests to the rulings consumers read,
+# and an ack changes only what reviewers see.
 _CURATED_KINDS = ("curated_interaction", "curated_condition",
                   "curated_class_interaction", "curated_property_ruling",
                   "curated_lab_effect")
