@@ -202,3 +202,123 @@ COMMENT ON VIEW drugref.lab_effect IS
     'class ruling; a class ruling never hides a member''s label rows. strongest_section '
     '/ section_rank are the grade. release_tag / release_drifted are NULL when no '
     'release is published. Absence of a row is NOT "no effect": read lab_effect_coverage.';
+
+-- ============================================================================
+-- 4. lab_effect_coverage -- "no statement" told apart from "no effect" (spec 8)
+-- ============================================================================
+-- One row per (drug, analyte, direction) for every drug in the registry, with exactly
+-- one state; the first that applies wins:
+--   stated                 -- lab_effect has a row (any role, either basis)
+--   ruled_no_effect        -- a live does_not_hold, the drug's own or a class's that
+--                             reaches it. THE ONLY "NO EFFECT" drugref ever states.
+--   cannot_establish       -- a curator looked and the sources do not settle it
+--   examined_nothing_found -- drugref read at least one label for this drug and found
+--                             nothing for this analyte. A label that does not mention
+--                             hyperkalaemia is NOT evidence of no hyperkalaemia:
+--                             unavailable context, NEVER reassurance.
+--   not_examined           -- no label for this drug was read
+-- A ruling with direction 'unspecified' speaks to both directions, as in lab_effect.
+CREATE OR REPLACE VIEW drugref.lab_effect_coverage AS
+WITH examined AS (
+    SELECT moiety_uuid, count(DISTINCT set_id) AS label_count
+    FROM   drugref.spl_lab_label_subject
+    WHERE  moiety_uuid IS NOT NULL
+    GROUP  BY moiety_uuid
+), live AS (
+    SELECT * FROM drugref.curated_lab_effect WHERE superseded_by IS NULL
+)
+SELECT m.moiety_uuid,
+       an.analyte_code,
+       d.direction,
+       CASE
+         WHEN EXISTS (SELECT 1 FROM drugref.lab_effect le
+                      WHERE  le.subject_kind = 'moiety'
+                        AND  le.subject_uuid = m.moiety_uuid
+                        AND  le.analyte_code = an.analyte_code
+                        AND  le.query_direction = d.direction)
+           THEN 'stated'
+         WHEN EXISTS (SELECT 1 FROM live x
+                      WHERE  x.verdict = 'does_not_hold'
+                        AND  x.analyte_code = an.analyte_code
+                        AND  x.direction IN (d.direction, 'unspecified')
+                        AND  ((x.subject_kind = 'moiety' AND x.subject_uuid = m.moiety_uuid)
+                              OR (x.subject_kind = 'class' AND EXISTS (
+                                     SELECT 1 FROM drugref.lab_effect_class_member cm
+                                     WHERE  cm.class_uuid = x.subject_class_uuid
+                                       AND  cm.moiety_uuid = m.moiety_uuid))))
+           THEN 'ruled_no_effect'
+         WHEN EXISTS (SELECT 1 FROM live x
+                      WHERE  x.verdict = 'cannot_establish'
+                        AND  x.subject_kind = 'moiety' AND x.subject_uuid = m.moiety_uuid
+                        AND  x.analyte_code = an.analyte_code
+                        AND  x.direction IN (d.direction, 'unspecified'))
+           THEN 'cannot_establish'
+         WHEN e.moiety_uuid IS NOT NULL THEN 'examined_nothing_found'
+         ELSE 'not_examined'
+       END AS state,
+       COALESCE(e.label_count, 0) AS label_count
+FROM   drugref.substance_moiety m
+CROSS  JOIN drugref.lab_analyte an
+CROSS  JOIN (VALUES ('high'), ('low')) AS d(direction)
+LEFT   JOIN examined e ON e.moiety_uuid = m.moiety_uuid;
+
+COMMENT ON VIEW drugref.lab_effect_coverage IS
+    'THE COVERAGE VIEW (#294): one row per (drug, analyte, direction high/low) with one '
+    'state -- stated, ruled_no_effect, cannot_establish, examined_nothing_found, '
+    'not_examined (first that applies). ONLY ruled_no_effect means "no effect"; '
+    'examined_nothing_found (a label was read and did not mention it) and not_examined '
+    'are UNAVAILABLE CONTEXT, NEVER REASSURANCE. label_count = distinct labels read for '
+    'the drug. Query it filtered by drug: it spans the whole registry.';
+
+-- ============================================================================
+-- 5. The worklist -- machine readings no curator has answered
+-- ============================================================================
+-- At the REVIEW UNIT, (drug, analyte): one question however many roles or directions
+-- the labels read, closed by any live moiety ruling on that analyte (rule 1).
+CREATE OR REPLACE VIEW drugref.gap_unconfirmed_label_lab_effect AS
+SELECT st.subject_moiety AS moiety_uuid,
+       st.analyte_code,
+       min(st.section_rank) AS section_rank,
+       -- Distinct labels across the pair (summing per-statement counts would count a
+       -- label once per role it was read in).
+       (SELECT count(DISTINCT ev.set_id) FROM drugref.lab_effect_label_evidence ev
+        WHERE  ev.subject_moiety = st.subject_moiety
+          AND  ev.analyte_code = st.analyte_code
+          AND  ev.role_read <> 'not_an_effect') AS label_count
+FROM   drugref.lab_effect_label_statement st
+WHERE  NOT EXISTS (SELECT 1 FROM drugref.curated_lab_effect x
+                   WHERE  x.superseded_by IS NULL AND x.subject_kind = 'moiety'
+                     AND  x.subject_uuid = st.subject_moiety
+                     AND  x.analyte_code = st.analyte_code)
+GROUP  BY st.subject_moiety, st.analyte_code;
+
+COMMENT ON VIEW drugref.gap_unconfirmed_label_lab_effect IS
+    'Gap kind unconfirmed_label_lab_effect: one row per (drug, analyte) whose label '
+    'readings no live moiety ruling answers; section_rank is the strongest grade, '
+    'label_count distinct labels. MACHINE-READ, NOT CONFIRMED, never an assertion, and '
+    '"not confirmed" is NOT "safe". Frozen gap key: LABEFFECT:<moiety_uuid>:<analyte_code>.';
+
+-- Widen open_question_gap_kind by one value: db/066's DO-block, the list COPIED
+-- VERBATIM from db/066 (the latest migration touching this constraint; 20 kinds).
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE  conname  = 'open_question_gap_kind'
+                   AND    conrelid = 'drugref.open_question'::regclass
+                   AND    pg_get_constraintdef(oid) LIKE '%unconfirmed_label_lab_effect%') THEN
+        ALTER TABLE drugref.open_question DROP CONSTRAINT IF EXISTS open_question_gap_kind;
+        ALTER TABLE drugref.open_question ADD CONSTRAINT open_question_gap_kind
+            CHECK (gap_kind IN (
+                'unpopulated_contraindication', 'unclassified_moiety',
+                'unmatched_ingredient', 'unreviewed_expansion_root',
+                'unresolved_ci_object', 'dead_by_expansion_policy',
+                'condition_without_indication', 'uncurated_additive_effect',
+                'uncurated_threshold', 'ineffective_contribution',
+                'ungraded_contribution', 'unruled_composition_activity',
+                'uncurated_condition_contradiction', 'uncurated_interaction_rule',
+                'unresolved_onc_endpoint', 'uncurated_class_interaction_rule',
+                'fda_cyp_unadjudicated', 'unresolved_ddi_endpoint',
+                'unconfirmed_class_property', 'unconfirmed_label_class_statement',
+                'unconfirmed_label_lab_effect'));
+    END IF;
+END $$;

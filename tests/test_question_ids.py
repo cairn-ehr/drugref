@@ -174,6 +174,15 @@ def test_unconfirmed_label_class_statement_question_matches_frozen_literal():
     )) == "790d0177-49e1-504e-a828-4207a9209bad"
 
 
+def test_unconfirmed_label_lab_effect_question_matches_frozen_literal():
+    """Fixed uuid on purpose: the pin freezes the 'LABEFFECT:<moiety>:<analyte>' format
+    (db/092, #294): one question per (drug, analyte), the review unit."""
+    m = uuid.UUID(int=0xA1)
+    assert str(ids.mint_question_uuid(
+        "unconfirmed_label_lab_effect", f"LABEFFECT:{m}:potassium"
+    )) == "8cdcecd5-4fbb-53de-9b42-fdaa808806e9"
+
+
 def test_a_compound_key_does_not_collide_with_its_halves():
     """The reason the compound key names BOTH classes: the same contributor class may
     be a sound promotion for one effect and a no-op for another, so folding the pair
@@ -190,8 +199,8 @@ def test_a_compound_key_does_not_collide_with_its_halves():
 
 
 def test_the_gap_registry_is_the_vocabulary_modules_merged_with_nothing_dropped():
-    """Issue 177 split `_GAP_SOURCES` across modules (three since the class-profile
-    gap kind); questions.py merges them.
+    """Issue 177 split `_GAP_SOURCES` across modules (four since the lab-effect gap
+    kind); questions.py merges them.
 
     A dict merge silently keeps the LATER of two equal keys, so a gap_kind defined
     in two modules would lose one spec without any error -- and a spec dropped in
@@ -200,11 +209,12 @@ def test_the_gap_registry_is_the_vocabulary_modules_merged_with_nothing_dropped(
     (register_from_gaps walks it in this order).
     """
     from drugref import (gap_sources_class_profile, gap_sources_interactions,
-                         gap_sources_registry, questions)
+                         gap_sources_lab_effect, gap_sources_registry, questions)
 
     parts = [set(gap_sources_registry.REGISTRY_GAP_SOURCES),
              set(gap_sources_interactions.INTERACTION_GAP_SOURCES),
-             set(gap_sources_class_profile.CLASS_PROFILE_GAP_SOURCES)]
+             set(gap_sources_class_profile.CLASS_PROFILE_GAP_SOURCES),
+             set(gap_sources_lab_effect.LAB_EFFECT_GAP_SOURCES)]
     assert sum(map(len, parts)) == len(set().union(*parts))
     assert list(questions._GAP_SOURCES) == [
         "unclassified_moiety", "unpopulated_contraindication", "unmatched_ingredient",
@@ -215,10 +225,10 @@ def test_the_gap_registry_is_the_vocabulary_modules_merged_with_nothing_dropped(
         "uncurated_interaction_rule", "unresolved_onc_endpoint",
         "uncurated_class_interaction_rule", "fda_cyp_unadjudicated",
         "unresolved_ddi_endpoint", "unconfirmed_class_property",
-        "unconfirmed_label_class_statement"]
+        "unconfirmed_label_class_statement", "unconfirmed_label_lab_effect"]
 
 
-def test_only_the_label_class_kind_carries_a_priority_rank():
+def test_only_the_two_label_kinds_carry_a_priority_rank():
     """#217: `rank_sql` is optional; a kind without one stores priority_rank NULL.
 
     Pinned so a new ranked kind is a deliberate choice: the rank orders questions
@@ -226,4 +236,4 @@ def test_only_the_label_class_kind_carries_a_priority_rank():
     """
     from drugref import questions
     assert [k for k, s in questions._GAP_SOURCES.items() if "rank_sql" in s] == [
-        "unconfirmed_label_class_statement"]
+        "unconfirmed_label_class_statement", "unconfirmed_label_lab_effect"]
