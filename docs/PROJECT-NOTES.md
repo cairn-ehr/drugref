@@ -7361,6 +7361,9 @@ partitions in ~4 min and needs no database) and from `drugref_allergy` (MED-RT `
 - **Every table with a `question_uuid` FK must be in `register_from_gaps`' DELETE guard**, or the first ruling
   citing its question aborts every later ingest. `curated_lab_effect` was missed and caught by the final review;
   `tests/test_question_delete_guard.py` now derives the list from the catalog.
+- **Deferred minors from that review are #302** (no withdraw path for a mis-keyed ruling; cross-direction
+  conflicts unsurfaced; no quote column yet; double rows under overlapping class rulings; typed idempotence;
+  `citation_audit._TABLES`).
 - **Filter `lab_effect` on `query_direction`, not `direction`:** an `unspecified` row is listed under both.
 - **`current_release` is LEFT-joined:** it has zero rows with no published release, and an inner join empties the
   view (pinned).

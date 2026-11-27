@@ -23,7 +23,8 @@ a pure term + role reader beside `spl_advice.py` (pin its terms to `lab_effect_t
 precision sample scoring **role and direction separately**. First check `spl_match` / `spl_advice_scope` on
 sections other than 34073-7. Also owed: the subject `resolution` vocabulary, quotes with their own 25% budget
 trigger (never `drug_interactions`), a combination-label rule. **Step 4:** the Rust reviewer service must write the
-class-ruling reach snapshot (Python-only today). **Also next:** #301, #299, #293, #295/#298, #297, #292.
+class-ruling reach snapshot (Python-only today). **Owner:** should a ruling retire label readings only when it
+cites the pair's question (spec §12)? **Also next:** #302 (review minors), #301, #299, #293, #295/#298, #297, #292.
 
 **⇒ OWNER, from #270:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
 archives are node-local; decide before they are shared (with #263). **#275**: the question bookkeeping and
@@ -32,9 +33,8 @@ the replay renumbers, and the coverage guard will NOT fire for their first write
 
 **⇒ STANDING (#258):** `DRUGREF_ARCHIVE` (absolute path; unset = no archive I/O, and publish warns the release is NOT
 reconstructable). **Publish refuses on any run ingested before the archive was set**, so production must be built
-from nothing with it set. **No named database carries `db/079`–`db/092` yet** (tested on `drugref_test` only).
-`ruff format` is NOT applied here; match the hand style. **Never VALIDATE `db/078`'s `NOT VALID` CHECK.** **No
-`-p no:cacheprovider` on a full run.**
+from nothing with it set. **No named database carries `db/079`–`db/092` yet** (only `drugref_test`). No `ruff
+format` here (hand style). **Never VALIDATE `db/078`'s `NOT VALID` CHECK.** **No `-p no:cacheprovider` on a full run.**
 
 **⇒ NEW, owner:** **#263** (under #25): an archive on a PBS-ingesting database holds the encumbered PBS file and its
 release record lists the PBS run; fine node-local, decide before archives are shared. **#244** (brand → composition:
@@ -92,7 +92,7 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 ## Open follow-ups
 
 Full ledger: [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **Open: #285, #292–#295, #297–#299,
-#301;** **open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); #224 partly done.
+#301, #302;** **open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); #224 partly done.
 **#244.** **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203,
 #204. From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155**,
 **#102**; **#67** (salt↔base) is wanted by four sources now (lab effects too) and blocks a grain; **#158** untouched.
