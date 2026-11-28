@@ -13,15 +13,18 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/lab-effects-294`: #294 step 1 of 4, no migration; schema ends at `db/088`.** The suite total lives
-in PROJECT-NOTES § "How to run / test" **and nowhere else**; `uv run pytest` fails if they disagree.
+**Branch `claude/lab-effects-model-294`: #294 step 2 of 4 (the model); schema ends at `db/092`.** The suite total
+lives in PROJECT-NOTES § "How to run / test" **and nowhere else**; `uv run pytest` fails if they disagree.
 
-**⇒ THIS ROUND** (PROJECT-NOTES § "Drug effects on laboratory values";
-[source evaluation](superpowers/specs/2026-11-27-drugref-lab-effects-source-evaluation.md)): **Owner:** record
-graded label statements, the consumer filters; a fourth role, *interferes with the result* (ReportTriage#36).
-**Owner (record §6):** drugref-owned analytes derived from MeSH, no LOINC codes in drugref tables (consumer
-maps); statements key to the MeSH `condition` registry plus a condition → (analyte, direction) map.
-**Then:** the model/read-view/gap-view spec, then the openFDA ingest. **Also next:** #299, #293, #295/#298, #297, #292.
+**⇒ NEXT: #294 step 3, the first openFDA label ingest** (PROJECT-NOTES § "Lab effects: the model"; the
+[design](superpowers/specs/2026-11-27-drugref-lab-effects-design.md)). Fill the empty `SPL_LAB` tables (`db/091`):
+a pure term + role reader beside `spl_advice.py` (pin its terms to `lab_effect_term`), orchestrator `spl_lab_run`
+(+ its replay adapter and source-clear order: both exempted in tests until then), the test-set comparison, and a
+precision sample scoring **role and direction separately**. First check `spl_match` / `spl_advice_scope` on
+sections other than 34073-7. Also owed: the subject `resolution` vocabulary, quotes with their own 25% budget
+trigger (never `drug_interactions`), a combination-label rule. **Step 4:** Rust must snapshot class reach and refuse
+a class reaching no drug (Python-only today). **Owner ruled 2026-11-28 (spec §13)** on which readings a ruling hides;
+**open:** only when it cites the pair's question (§12)? **Next:** #302, #301, #299, #293, #295/#298, #297, #292.
 
 **⇒ OWNER, from #270:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
 archives are node-local; decide before they are shared (with #263). **#275**: the question bookkeeping and
@@ -30,9 +33,8 @@ the replay renumbers, and the coverage guard will NOT fire for their first write
 
 **⇒ STANDING (#258):** `DRUGREF_ARCHIVE` (absolute path; unset = no archive I/O, and publish warns the release is NOT
 reconstructable). **Publish refuses on any run ingested before the archive was set**, so production must be built
-from nothing with it set. **No named database carries `db/079`–`db/088` yet** (tested on `drugref_test` only).
-`ruff format` is NOT applied here; match the hand style. **Never VALIDATE `db/078`'s `NOT VALID` CHECK.** **No
-`-p no:cacheprovider` on a full run.**
+from nothing with it set. **No named database carries `db/079`–`db/092` yet** (only `drugref_test`). No `ruff
+format` here (hand style). **Never VALIDATE `db/078`'s `NOT VALID` CHECK.** **No `-p no:cacheprovider` on a full run.**
 
 **⇒ NEW, owner:** **#263** (under #25): an archive on a PBS-ingesting database holds the encumbered PBS file and its
 release record lists the PBS run; fine node-local, decide before archives are shared. **#244** (brand → composition:
@@ -89,27 +91,25 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 
 ## Open follow-ups
 
-Full ledger: [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **Open: #285, #292–#295, #297–#299,
-#301;** **open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); #224 partly done.
+Full ledger: [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **Open: #285, #292, #293, #295, #297–#299,
+#301, #302;** **open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); #224 partly done.
 **#244.** **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203,
-#204. From class mentions: #220–#222.** FDA-CYP names: **#239**.
-Open: **#164**, **#169**. Standing: **#155** and **#102**; **#67** (salt↔base) is wanted by three sources and blocks
-a grain; **#158** untouched. Also #148, #152, #128/#129, #124, #94. Before production: re-run every parser on
-current releases **with `DRUGREF_ARCHIVE` set**, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
+#204. From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155**,
+**#102**; **#67** (salt↔base) is wanted by four sources now (lab effects too) and blocks a grain; **#158** untouched.
+Also #148, #152, #128/#129, #124, #94. Before production: re-run every parser on current releases **with
+`DRUGREF_ARCHIVE` set**, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 
-- Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
-  tests; never for reviewer accounts or GUI data. Pytest runs in a per-session copy,
-  `<dbname>_pid<pid>_<token>` (#153, fixed): concurrent sessions on one DSN are safe, and the role needs CREATEDB.
-- **`drugref_excl248`** (#248/#249) is `createdb -T drugref_hygiene214` migrated to `db/078`, no ingest; never
-  patch it (no named database carries `db/079`–`db/088`: see STANDING).
+- Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres` (`DRUGREF_TEST_DSN`; never for reviewer
+  accounts or GUI data). Pytest uses a per-session copy (#153): concurrent sessions are safe; the role needs CREATEDB.
+- **`drugref_excl248`** (#248/#249): `createdb -T drugref_hygiene214` at `db/078`, no ingest; never patch it.
 - **`drugref_hygiene214` is #214's SPL database**: `createdb -T drugref_ambig132`, `db/077`, **SPL run 19
   is the shipped measurement** (run 18: refused by the old class floor, unfinished, nothing written). Never patch
   it. **`drugref_names243`** (#243) had its official names truncated on purpose: never use it as a template.
-- **`drugref_ambig132` is #132/#135's** (`db/075`; carries SPL run 12, run 19's baseline): never patch.
 - **The FDA-CYP / names chain** (each `createdb -T` the previous; never patch any): `drugref_usnames` (#213, SPL
-  run 12 shipped) → `drugref_names` (#232) → `drugref_fdacyp226` → `drugref_role134` → `drugref_ambig132`;
+  run 12 shipped) → `drugref_names` (#232) → `drugref_fdacyp226` → `drugref_role134` → `drugref_ambig132` (#132/#135,
+  `db/075`, run 19's baseline);
   `drugref_synonyms` (#231) branches from `drugref_names`. Details: PROJECT-NOTES § "How to run / test". Create a
   test DB with `createdb` first (pytest connects there and creates its session copy beside it). Other named
   databases lack db/072–077 until migrated; their pre-072 census rows then read NULL (not measured).

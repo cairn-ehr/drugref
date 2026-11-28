@@ -399,6 +399,16 @@ def test_apply_migrations_is_idempotent(conn):
         # curated_ddi_pair's CTEs so `drugref interactions` can ask which drugs a
         # class-grain orphan concerns.
         "class_rule_member",
+        # db/089-db/092 (#294): drug effects on laboratory values -- the vocabulary,
+        # the curator's rulings and their class reach, the empty SPL_LAB label
+        # storage, and the read, evidence, statement, coverage and worklist views.
+        "lab_analyte", "lab_effect_section", "lab_effect_term",
+        "curated_lab_effect", "lab_effect_class_member", "curated_lab_effect_reach",
+        "spl_lab_label", "spl_lab_label_subject", "spl_lab_wording",
+        "spl_lab_label_section", "spl_lab_effect_occurrence",
+        "lab_effect_label_evidence", "lab_effect_label_statement",
+        "lab_effect_open_label_statement", "lab_effect",
+        "lab_effect_coverage", "gap_unconfirmed_label_lab_effect",
     }
 
 

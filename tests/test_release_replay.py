@@ -113,9 +113,12 @@ def test_manifest_differences():
 
 
 def test_every_orchestrator_writer_has_an_adapter():
-    """`curation` and `unattributed` name no orchestrator: a run with either is refused."""
+    """`curation` and `unattributed` name no orchestrator: a run with either is refused.
+
+    `spl_lab_run` (db/091) has no orchestrator YET: #294 step 3 writes it and must add
+    its adapter here. Until then no SPL_LAB run exists to replay."""
     assert set(release_replay.ADAPTERS) == (
-        set(provenance.WRITERS) - {"curation", "unattributed"})
+        set(provenance.WRITERS) - {"curation", "unattributed", "spl_lab_run"})
 
 
 # ---- end to end ------------------------------------------------------------
@@ -519,3 +522,72 @@ def test_a_bad_tag_is_refused_by_the_cli(published, capsys):
     argv[-1] = "../escape"
     assert cli.main(argv) == 2
     _assert_nothing_written(published)
+
+
+@pytest.fixture
+def lab_published(databases, tmp_path, monkeypatch):
+    """Origin: run 1 (X, Y in A), a CLASS lab-effect ruling on A, run 2 (X leaves A),
+    published. The ruling reached X and Y when made (db/090, #294)."""
+    from drugref import curation_lab_effect
+    origin, target = databases
+    root = tmp_path / "archive"
+    monkeypatch.setenv(archive.ENV_VAR, str(root))
+    monkeypatch.setattr(release_archive, "git_commit", lambda: SHA)
+    monkeypatch.setitem(release_replay.ADAPTERS, "onchigh_run", _fake_ingest)
+    one, two = tmp_path / "in1", tmp_path / "in2"
+    one.mkdir(), two.mkdir()
+    # B is there because the fake ingest files its A x B rule on the first run.
+    (one / "members.txt").write_text(f"{A} {X}\n{A} {Y}\n{B} {Y}\n")
+    (two / "members.txt").write_text(f"{A} {Y}\n{B} {Y}\n")
+    kp = signing.generate_keypair()
+    with psycopg.connect(origin) as c:
+        _fake_ingest(c, [one / "members.txt"], "r1")
+        rid, _ = curation_lab_effect.record_lab_effect_ruling(
+            c, subject_class_uuid=ids.mint_class_uuid("MED-RT", A),
+            analyte_code="potassium", direction="high", role="causes", verdict="holds",
+            reviewed_by="test", reviewed_against="2026")
+        c.commit()
+        _fake_ingest(c, [two / "members.txt"], "r2")
+        release_archive.publish_archived(
+            c, root=root, release_tag=TAG, published_by="op",
+            private_key=kp.private_key, key_fingerprint=signing.fingerprint(kp.public_key))
+        c.commit()
+    return {"origin": origin, "target": target, "root": root, "ruling": rid}
+
+
+def test_a_class_lab_effect_ruling_replays_with_its_reach(lab_published):
+    report = _replay(lab_published)
+    assert report.differences == [] and report.reproduced
+    with psycopg.connect(lab_published["target"]) as c:
+        (members,) = c.execute(
+            "SELECT members FROM drugref.curated_lab_effect_reach "
+            "WHERE curated_lab_effect_id = %s", (lab_published["ruling"],)).fetchone()
+    assert set(members) == {ids.mint_moiety_uuid(X), ids.mint_moiety_uuid(Y)}
+
+
+def test_a_class_lab_ruling_exported_without_its_reach_is_a_difference(lab_published):
+    """Every class ruling is snapshotted when made, so a missing reach row is a
+    broken export, not a moiety ruling (#258's audit row would be gone)."""
+    export = archive.curated_export_path(lab_published["root"], TAG)
+    _edit(export, lambda b: b["curated_lab_effect_reach"].clear())
+    assert _replay(lab_published).differences == [
+        f"lab-effect class ruling {lab_published['ruling']}: the export lacks its "
+        "reach row"]
+
+
+def test_a_lab_reach_row_whose_ruling_is_not_exported_is_a_difference(lab_published):
+    export = archive.curated_export_path(lab_published["root"], TAG)
+    _edit(export, lambda b: b["curated_lab_effect"].clear())
+    differences = _replay(lab_published).differences
+    # The manifest comparison also misses the ruling; the reach row is the new news.
+    assert (f"curated_lab_effect_reach {lab_published['ruling']}: its ruling is not "
+            "in the export") in differences
+    assert len(differences) == 2
+
+
+def test_a_lab_effect_reach_the_replay_does_not_rebuild_is_a_difference(lab_published):
+    export = archive.curated_export_path(lab_published["root"], TAG)
+    _edit(export, lambda b: b["curated_lab_effect_reach"][0]["members"].pop())
+    assert _replay(lab_published).differences == [
+        f"lab-effect class ruling {lab_published['ruling']}: reach differs from ruling "
+        "time: 1 added, 0 missing"]

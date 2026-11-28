@@ -119,9 +119,11 @@ def test_every_curated_context_has_a_frozen_natural_key():
     from drugref import releases
     assert set(releases._CURATED_KINDS) == {"curated_interaction", "curated_condition",
                                             "curated_class_interaction",
-                                            "curated_property_ruling"}
+                                            "curated_property_ruling",
+                                            "curated_lab_effect"}
     for context in ("curated_interaction/v1", "curated_condition/v1",
-                    "curated_class_interaction/v1", "curated_property_ruling/v1"):
+                    "curated_class_interaction/v1", "curated_property_ruling/v1",
+                    "curated_lab_effect/v1"):
         assert context in signing_contexts.NATURAL_KEY_COLUMNS
     # A manifest is never itself enumerated by a manifest -- see NATURAL_KEY_COLUMNS'
     # own closing note. Asserted, not merely stated, so the day somebody adds it out of

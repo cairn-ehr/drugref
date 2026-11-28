@@ -35,6 +35,9 @@ _EXPORT_TABLES = {
     "curated_condition": "curated_condition_id",
     "curated_class_interaction": "curated_class_interaction_id",
     "curated_property_ruling": "curated_property_ruling_id",
+    "curated_lab_effect": "curated_lab_effect_id",
+    # Who a class lab-effect ruling reached when it was made (db/090, #258).
+    "curated_lab_effect_reach": "curated_lab_effect_id",
     "class_expansion_policy": "policy_id",
     # Audit data no upstream file can rebuild: who a class ruling reached (db/080).
     "curated_class_interaction_reach":
@@ -96,6 +99,9 @@ NOT_EXPORTED = {
     "fda_cyp_pathway": "a vocabulary db/043 seeds",
     "ddi_source_severity": "a vocabulary db/049 seeds",
     "spl_advice_level": "a vocabulary db/066 seeds",
+    "lab_analyte": "a vocabulary db/089 seeds",
+    "lab_effect_section": "a vocabulary db/089 seeds",
+    "lab_effect_term": "a vocabulary db/089 seeds",
     # Bookkeeping the replay produces for itself.
     "schema_migration": "the migration ledger: a replay migrates its target first",
     "ingest_run": "one row per run: the replay writes its own as it re-runs each",

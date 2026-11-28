@@ -21,7 +21,8 @@ def _make_state(conn, state):
         _publish(conn, [_old_run(conn, "UNII")])
         _run(conn, "UNII", LATER)
     elif state == "predates":
-        conn.execute("DROP VIEW drugref.current_release")
+        # CASCADE: db/092's lab_effect reads the view; a pre-db/081 database has neither.
+        conn.execute("DROP VIEW drugref.current_release CASCADE")
 
 
 EXPECTED = {
@@ -53,5 +54,6 @@ def test_status_prints_the_header_first(conn, capsys, monkeypatch, state):
 
 
 def test_the_header_for_a_missing_view_never_aborts(conn):
-    conn.execute("DROP VIEW drugref.current_release")
+    # CASCADE: db/092's lab_effect reads the view; a pre-db/081 database has neither.
+    conn.execute("DROP VIEW drugref.current_release CASCADE")
     assert release_state.release_header(conn) == EXPECTED["predates"]

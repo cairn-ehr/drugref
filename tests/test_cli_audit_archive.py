@@ -195,7 +195,8 @@ def test_a_path_like_release_tag_exits_2(conn, tmp_path, monkeypatch, capsys, ta
 
 def test_a_database_predating_db081_says_so(conn, tmp_path, monkeypatch, capsys):
     monkeypatch.setenv(archive.ENV_VAR, str(tmp_path))
-    conn.execute("DROP VIEW drugref.current_release")
+    # CASCADE: db/092's lab_effect reads the view; a pre-db/081 database has neither.
+    conn.execute("DROP VIEW drugref.current_release CASCADE")
     assert _run_cli(conn) == 2
     err = capsys.readouterr().err
     assert "predates db/081" in err and "no release is published" not in err

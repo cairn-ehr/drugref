@@ -97,6 +97,17 @@ def test_a_new_class_ruling_is_drift(conn, ingest_run_id):
     assert current_release(conn).drift_reasons == ("re-curated",)
 
 
+def test_a_new_lab_effect_ruling_is_drift(conn, a_moiety):
+    """db/090's probe on curated_lab_effect, checked on its own like the one above."""
+    _publish(conn)
+    conn.execute(
+        "INSERT INTO drugref.curated_lab_effect (subject_moiety_uuid, analyte_code, "
+        "direction, role, verdict, source, reviewed_by, reviewed_against, reviewed_at) "
+        "VALUES (%s, 'potassium', 'high', 'causes', 'holds', 'DRUGREF', 't', 'x', "
+        f"{LATER})", (a_moiety,))
+    assert current_release(conn).drift_reasons == ("re-curated",)
+
+
 def test_a_policy_row_is_drift(conn):
     _publish(conn)
     conn.execute(
@@ -126,5 +137,6 @@ def test_current_release_or_absent_distinguishes_all_three(conn):
     assert release_state.current_release_or_absent(conn) is None
     _publish(conn)
     assert release_state.current_release_or_absent(conn).release_tag == TAG
-    conn.execute("DROP VIEW drugref.current_release")
+    # CASCADE: db/092's lab_effect reads the view; a pre-db/081 database has neither.
+    conn.execute("DROP VIEW drugref.current_release CASCADE")
     assert release_state.current_release_or_absent(conn) is release_state.VIEW_ABSENT

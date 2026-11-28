@@ -100,3 +100,7 @@ history is never lost — it remains in the git log and in the dated design spec
   pair a ruling ever graded rather than comparing against a ruling-time snapshot, why the record is refreshed by
   deferred database triggers, why a departure warning ends only when a curator acknowledges it, and why a ruling
   that stops reaching a pair is flagged even when another ruling still grades it.
+- [Lab effects are keyed to drugref's own analytes](lab-effects-keyed-to-analytes.md) — why a drug's effect on a
+  laboratory value is stored against a MeSH-derived analyte and a direction rather than a MeSH condition or a LOINC
+  code, why the role is machine-read but never defaulted, and why a curator's ruling on one drug, analyte and
+  direction replaces every label reading for them while a class ruling never hides one.
